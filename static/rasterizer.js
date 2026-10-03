@@ -197,7 +197,7 @@
   }
 
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
-  // Fit complete hexagons inside the rectangle, leaving a scalloped white border.
+  // Fit complete hexagons inside the rectangle, leaving a scalloped transparent border.
   // Staggered rows reflect with edits.
   function cellPolygon(grid, index) {
     const col = index % grid.columns, row = Math.floor(index / grid.columns);
@@ -426,7 +426,6 @@
     const ctx = canvas.getContext("2d");
     if (p.grid_shape === "hexagon") {
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height);
       const path = points => {
         ctx.beginPath();
         points.forEach(([x, y], i) => i ? ctx.lineTo(x * width, y * height) : ctx.moveTo(x * width, y * height));

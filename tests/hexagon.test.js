@@ -124,13 +124,15 @@ test("hexagonal SVG and PNG use polygons, physical dimensions and current painte
     assert.ok(points.every(point => point.every(value => value >= 0 && value <= 1)));
   }
   assert.ok(!svg.includes("<rect"));
-  const calls = { fill: 0, stroke: 0, points: 0 }, ctx = { clearRect() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() { calls.points++; }, closePath() {}, fill() { calls.fill++; }, stroke() { calls.stroke++; } };
+  const calls = { fill: 0, stroke: 0, points: 0, clear: 0, background: 0 }, ctx = { clearRect() { calls.clear++; }, fillRect() { calls.background++; }, beginPath() {}, moveTo() {}, lineTo() { calls.points++; }, closePath() {}, fill() { calls.fill++; }, stroke() { calls.stroke++; } };
   const canvas = { getContext: () => ctx };
   R.paintExport(canvas, payload);
   assert.deepEqual([canvas.width, canvas.height], [591, 1181]);
   assert.equal(calls.fill, result.cells.length);
   assert.equal(calls.stroke, result.cells.length * 2);
   assert.equal(calls.points, result.cells.length * 10);
+  assert.equal(calls.clear, 1, "previous pixels are cleared to transparency");
+  assert.equal(calls.background, 0, "PNG exports must not fill transparent margins with an opaque background");
   assert.throws(() => R.imageSettings(10, 10, { shape: "triangle" }));
   assert.throws(() => R.exportSVG({ ...payload, grid_shape: "triangle" }));
 });

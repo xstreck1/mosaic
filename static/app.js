@@ -249,6 +249,7 @@ function drawPreview() {
   $("previewCanvas").hidden = original;
   $("originalImage").hidden = !original;
   workspace.classList.toggle("original-mode", original);
+  workspace.classList.toggle("hexagon-mode", !original && state.shape === "hexagon");
   if (!state.result || state.mosaicDirty || original) return;
   const canvas = $("previewCanvas");
   const scale = Math.min(window.devicePixelRatio || 1, 3);
