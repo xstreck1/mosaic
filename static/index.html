@@ -21,7 +21,6 @@
     <div class="header-actions"><button class="text-button" id="helpButton">How it works <span aria-hidden="true">↗</span></button><button class="button secondary" id="printButton" title="Print mosaic at the selected dimensions" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7z"/><path d="M16 11h1"/></svg> Print</button><button class="button primary" id="exportButton" disabled><span aria-hidden="true">↓</span> Export mosaic</button></div>
   </header>
   <main>
-    <div class="intro"><div><p class="eyebrow"><span></span> A SMALL GRID. A NEW PERSPECTIVE.</p><h1>Make every square count.</h1><p class="intro-description">Turn your images into colorful mosaics, one square at a time.</p></div><span class="intro-badge"><span aria-hidden="true">✳</span> Less detail, more character</span></div>
     <div class="workspace">
       <aside class="controls" aria-label="Mosaic settings">
         <section class="control-section source-section">
@@ -63,7 +62,6 @@
           <button class="edit-button" id="resetAdjustments" disabled>Reset adjustments</button>
           <p class="field-note">Adjust colors in either view. Select Mosaic to make squares. Changes clear painted edits when the mosaic is rebuilt.</p>
         </section>
-        <div class="local-note"><span aria-hidden="true">◉</span><span>Processed in your browser.<br>Your image is never uploaded.</span></div>
       </aside>
       <section class="preview-panel" aria-label="Mosaic preview">
         <div class="preview-toolbar"><div class="preview-title"><span class="live-dot"></span><h2>Preview</h2><span id="previewTag">21 × 21 squares</span></div><div class="segmented view-selector"><button id="mosaicView" class="active" aria-pressed="true">Mosaic</button><button id="originalView" aria-pressed="false">Original</button></div></div>
@@ -82,7 +80,7 @@
         <div class="palette-display"><div class="palette-heading"><h2 id="paletteTitle">Your colors</h2><span id="usedColors">A palette for every square</span></div><div id="swatches" class="swatches" aria-label="Mosaic color palette"></div><div class="palette-footer"><span>Pick a color, then click or drag to paint squares.</span><span>Grid, framing, palette & adjustments reset edits.</span></div></div>
       </section>
     </div>
-    <div class="bottom-note"><span>Made for pixel lovers, makers & curious minds.</span><span>MOSAIC / V1.0</span></div>
+    <footer class="bottom-note"><div class="local-note"><span aria-hidden="true">◉</span><span>Processed in your browser.<br>Your image is never uploaded.</span></div><span>MOSAIC / V1.0</span></footer>
   </main>
   <section id="printArea" class="print-area" aria-hidden="true"></section>
   <div id="notice" class="notice" role="status" hidden></div>
