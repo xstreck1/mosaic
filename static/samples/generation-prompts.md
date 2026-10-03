@@ -27,3 +27,9 @@ Use case: stylized-concept. Asset type: square PNG source image for the Mosaic a
 ## citrus-print.png
 
 Use case: stylized-concept. Asset type: square source image for a mosaic app's example gallery. A halved orange seen from above with one dark green leaf, playful vintage linocut / woodblock print. Mustard yellow, burnt orange, cream and forest green palette, textured ink, bold irregular carved outlines, visibly handmade printing. Large clear citrus wedge pattern, fruit fills most of the square composition, simple pale ochre background. Distinct style from watercolor, photo, pop art, and 3D. No text, lettering, borders, logos, watermark, or pixel grid.
+
+The previous `citrus-print.png` is retained to keep cached gallery versions working; the gallery now selects `strawberry.png`.
+
+## strawberry.png
+
+Use case: stylized-concept. Asset type: square source image for the Mosaic app example gallery. One single ripe strawberry with a bright fresh green leafy calyx, centered on a pure white background. Full fruit visible, broad heart-shaped red berry tapering to a soft point, filling about 80 percent of the square with comfortable white margins. Rich strawberry red with a few broad coral highlights and deeper red shaded regions, bold green leaves and small pale golden seeds. Clean stylized botanical illustration with simple readable shapes, a little gouache texture only inside the fruit, crisp silhouette and large distinct color regions that survive a 21 by 21 mosaic. Friendly vivid natural colors, recognizable strawberry, no face. White background must remain plain and evenly white, without shadow, paper texture, gradients, border, scenery, plate, other fruit, text, lettering, logos, watermark, or pixel grid.
