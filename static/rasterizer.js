@@ -118,13 +118,23 @@
       if (neutralA !== neutralB) return lightness + 20000;
       return lightness + 2 * hueDistance(a.hue, b.hue) ** 2 + 2500 * (a.saturation - b.saturation) ** 2;
     };
-    // Keep a white background when the source includes pure white (including
-    // flattened transparency). Add colors by weighted coverage, so reducing
-    // the limit keeps dominant hues without filling every slot with one shade.
     const white = full.indexOf("#FFFFFF"), selected = [];
-    if (white >= 0 && samples.some(color => color.every(v => v === 255))) selected.push(white);
-    if (!selected.length) selected.push(weights.indexOf(Math.max(...weights)));
-    const distances = entries.map(entry => cost(entry, entries[selected[0]]));
+    if (preset === PRESETS.rainbow) {
+      // A reduced Rainbow must still span red through purple, even when the
+      // source contains little or no purple. Nine slots hold all seven hues
+      // at their vivid middle tone plus black and white; extra slots add shades.
+      selected.push(0, white);
+      const hues = Math.min(7, limit - 2);
+      for (let i = 0; i < hues; i++) {
+        const family = hues === 1 ? 0 : Math.round(i * 6 / (hues - 1));
+        selected.push(4 + family * 3);
+      }
+    } else {
+      // Keep white backgrounds, then select colors by source-weighted coverage.
+      if (white >= 0 && samples.some(color => color.every(v => v === 255))) selected.push(white);
+      if (!selected.length) selected.push(weights.indexOf(Math.max(...weights)));
+    }
+    const distances = entries.map(entry => Math.min(...selected.map(i => cost(entry, entries[i]))));
     while (selected.length < limit) {
       let best = -1, improvement = -Infinity;
       entries.forEach((entry, i) => {

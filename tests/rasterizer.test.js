@@ -164,6 +164,25 @@ test("reduced palettes retain minority hue families and grayscale ignores hue", 
   const gray = solid([0, 120, 255, 255], { palette: "grayscale", colors: 16 });
   assert.ok(gray.palette.every(color => { const [r, g, b] = rgb(color); return r === g && g === b; }));
 });
+test("reduced Rainbow spans the spectrum through purple independently of source frequencies", () => {
+  const spectrum = ["#FF0000", "#FF8000", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#BF00FF"];
+  // A source without purple must not remove it from the named Rainbow palette.
+  for (let colors = 2; colors <= 24; colors++) {
+    const result = solid([255, 128, 0, 255], { palette: "rainbow", colors });
+    assert.equal(result.palette.length, colors);
+    assert.equal(new Set(result.palette).size, colors);
+    assert.ok(result.palette.includes("#000000") && result.palette.includes("#FFFFFF"));
+    if (colors >= 4) assert.ok(result.palette.includes(spectrum[0]) && result.palette.includes(spectrum[6]));
+    if (colors >= 9) spectrum.forEach(color => assert.ok(result.palette.includes(color), `${colors}: ${color}`));
+    if (colors === 9) assert.deepEqual(result.palette, ["#000000", "#FFFFFF", ...spectrum]);
+  }
+  // Even a thin purple stripe on a predominantly warm image retains its hue.
+  const data = pixels(25, 25, x => [...rgb(x === 24 ? "#BF00FF" : "#FF8000"), 255]);
+  const result = R.rasterizePixels(data, 25, 25, { grid: 25, palette: "rainbow", colors: 9 });
+  assert.equal(result.palette[result.cells[24]], "#BF00FF");
+  assert.equal(result.counts[result.palette.indexOf("#BF00FF")], 25);
+});
+
 test("mirror reverses rows after conversion without changing palette or counts", () => {
   const data = pixels(5, 5, (x, y) => [...rgb(R.PALETTE[(y * 5 + x) % 20]), 255]);
   for (const palette of ["studio", "image"]) {
