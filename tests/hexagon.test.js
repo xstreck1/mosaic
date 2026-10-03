@@ -9,26 +9,36 @@ function pixels(width, height, fn) {
   return data;
 }
 
-test("hexagons cover the entire board and every interior point belongs to a tile", () => {
+test("every hexagon has six complete vertices inside the board, with unpaintable outer margins", () => {
   for (const size of [5, 21, 64]) for (const mirror of [false, true]) {
     const grid = { ...R.gridLayout(size, "hexagon"), grid_shape: "hexagon", mirror };
     const cells = grid.columns * grid.rows;
-    assert.ok(Math.abs(Array.from({ length: cells }, (_, i) => area(R.clippedCell(grid, i))).reduce((a, b) => a + b, 0) - 1) < 1e-10);
+    const expectedArea = .75 / ((grid.columns + .5) * ((grid.rows - 1) * .75 + 1));
+    for (let index = 0; index < cells; index++) {
+      const polygon = R.cellPolygon(grid, index);
+      assert.equal(polygon.length, 6);
+      assert.ok(polygon.every(point => point.every(value => value >= 0 && value <= 1)));
+      assert.ok(Math.abs(area(polygon) - expectedArea) < 1e-12);
+      assert.ok(Math.abs(area(R.clippedCell(grid, index)) - expectedArea) < 1e-12);
+      const center = polygon.reduce((sum, point) => sum.map((value, axis) => value + point[axis] / 6), [0, 0]);
+      assert.equal(R.cellAtPoint(grid, ...center), index);
+    }
     for (let y = 0; y < 97; y++) for (let x = 0; x < 99; x++) {
       const index = R.cellAtPoint(grid, (x + .37) / 99, (y + .41) / 97);
-      assert.ok(index !== null && index >= 0 && index < cells);
+      if (index !== null) assert.ok(index >= 0 && index < cells);
     }
     assert.equal(R.cellAtPoint(grid, -0.1, .5), null);
     assert.equal(R.cellAtPoint(grid, .5, 1), null);
+    for (const point of [[.001, .001], [.999, .001], [.001, .999], [.999, .999]]) assert.equal(R.cellAtPoint(grid, ...point), null);
   }
 });
 
-test("hexagonal sampling preserves solid colors through trimmed edges and transparent backgrounds", () => {
+test("complete hexagonal sampling preserves solid colors and transparent backgrounds", () => {
   for (const [width, height, color] of [[19, 19, [17, 110, 224, 255]], [1, 1, [255, 0, 0, 255]], [19, 19, [0, 0, 0, 0]]]) {
     const result = R.rasterizePixels(pixels(width, height, () => color), width, height, { grid: 5, shape: "hexagon", palette: "image", colors: 64 });
-    assert.equal(result.cells.length, 42);
+    assert.equal(result.cells.length, 30);
     assert.deepEqual(result.palette, [color[3] ? "#" + color.slice(0, 3).map(c => c.toString(16).padStart(2, "0")).join("").toUpperCase() : "#FFFFFF"]);
-    assert.equal(result.counts[0], 42);
+    assert.equal(result.counts[0], 30);
   }
 });
 
@@ -76,7 +86,7 @@ test("hexagon crops, contained white margins and color adjustments use the selec
   assert.deepEqual(direct.cells, adjusted.cells);
   assert.deepEqual(direct.palette, adjusted.palette);
   assert.deepEqual(direct.crop_size, [20, 10]);
-  assert.equal(direct.palette[direct.cells[R.cellAtPoint(direct, .5, .01)]], "#FFFFFF");
+  assert.equal(direct.palette[direct.cells[2]], "#FFFFFF");
   assert.notEqual(direct.palette[direct.cells[R.cellAtPoint(direct, .5, .5)]], "#FFFFFF");
   assert.ok(!direct.palette.includes("#FF0000"), "the excluded red half cannot affect the crop");
 });
@@ -108,6 +118,11 @@ test("hexagonal SVG and PNG use polygons, physical dimensions and current painte
   assert.match(svg, /width="5cm" height="10cm" viewBox="0 0 1 1"/);
   assert.match(svg, /<polygon points="[^"]+" fill="#DA0D0B"/);
   assert.equal((svg.match(/<polygon /g) || []).length, result.cells.length * 2);
+  for (const match of svg.matchAll(/<polygon points="([^"]+)"/g)) {
+    const points = match[1].split(" ").map(point => point.split(",").map(Number));
+    assert.equal(points.length, 6, "exported edge tiles must remain complete hexagons");
+    assert.ok(points.every(point => point.every(value => value >= 0 && value <= 1)));
+  }
   assert.ok(!svg.includes("<rect"));
   const calls = { fill: 0, stroke: 0, points: 0 }, ctx = { clearRect() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() { calls.points++; }, closePath() {}, fill() { calls.fill++; }, stroke() { calls.stroke++; } };
   const canvas = { getContext: () => ctx };

@@ -230,7 +230,7 @@ function updateDimensions() {
   const valid = validDimensions();
   $("canvasSize").textContent = valid ? `${width} × ${height} cm` : "Set print dimensions";
   $("physicalSize").textContent = valid ? `${width} × ${height}` : "—";
-  $("cellSize").textContent = valid ? hex ? `Hexagons are approximately ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75)).toFixed(2)} mm. Edge tiles are trimmed.` : `Each square is ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / grid).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
+  $("cellSize").textContent = valid ? hex ? `Hexagons are approximately ${(width * 10 / (layout.columns + .5)).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75 + 1)).toFixed(2)} mm. Only full tiles are shown.` : `Each square is ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / grid).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
   updateActionButtons();
   drawPreview();
 }

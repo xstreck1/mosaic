@@ -193,17 +193,18 @@
   }
 
   function gridLayout(size, shape = "square") {
-    return shape === "hexagon" ? { columns: size + 1, rows: Math.round(size * 2 / Math.sqrt(3)) + 1 } : { columns: size, rows: size };
+    return shape === "hexagon" ? { columns: size, rows: Math.round(size * 2 / Math.sqrt(3)) } : { columns: size, rows: size };
   }
 
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
-  // Extra boundary cells cover the whole rectangle; staggered rows reflect with edits.
+  // Fit complete hexagons inside the rectangle, leaving a scalloped white border.
+  // Staggered rows reflect with edits.
   function cellPolygon(grid, index) {
     const col = index % grid.columns, row = Math.floor(index / grid.columns);
     if (grid.grid_shape !== "hexagon") return [[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]]
       .map(([x, y]) => [x / grid.columns, y / grid.rows]);
     const offset = (row % 2 ? .25 : -.25) * (grid.mirror ? -1 : 1);
-    const cx = col + offset, cy = row * .75, width = grid.columns - 1, height = (grid.rows - 1) * .75;
+    const cx = col + .75 + offset, cy = row * .75 + .5, width = grid.columns + .5, height = (grid.rows - 1) * .75 + 1;
     return [[0, -.5], [.5, -.25], [.5, .25], [0, .5], [-.5, .25], [-.5, -.25]]
       .map(([x, y]) => [(cx + x) / width, (cy + y) / height]);
   }
@@ -239,10 +240,10 @@
   function cellAtPoint(grid, x, y) {
     if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
     if (grid.grid_shape !== "hexagon") return Math.floor(y * grid.rows) * grid.columns + Math.floor(x * grid.columns);
-    const nearRow = Math.round(y * (grid.rows - 1));
+    const nearRow = Math.round((y * ((grid.rows - 1) * .75 + 1) - .5) / .75);
     for (let row = Math.max(0, nearRow - 1); row <= Math.min(grid.rows - 1, nearRow + 1); row++) {
       const offset = (row % 2 ? .25 : -.25) * (grid.mirror ? -1 : 1);
-      const nearCol = Math.round(x * (grid.columns - 1) - offset);
+      const nearCol = Math.round(x * (grid.columns + .5) - .75 - offset);
       for (let col = Math.max(0, nearCol - 1); col <= Math.min(grid.columns - 1, nearCol + 1); col++) {
         const index = row * grid.columns + col, points = cellPolygon(grid, index);
         if (points.every((a, i) => { const b = points[(i + 1) % points.length]; return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) >= -1e-12; })) return index;
@@ -268,7 +269,7 @@
 
   function hexSamples(data, width, bounds, side, originX, originY, settings, adjust) {
     const [left, top, right, bottom] = bounds;
-    const dx = side / (settings.columns - 1), dy = side / ((settings.rows - 1) * .75), samples = [];
+    const dx = side / (settings.columns + .5), dy = side / ((settings.rows - 1) * .75 + 1), samples = [];
     const grid = { ...settings, mirror: false };
     for (let index = 0; index < grid.columns * grid.rows; index++) {
       const points = cellPolygon(grid, index), cx = originX + points[0][0] * side, cy = originY + (points[0][1] * side + dy / 2);
@@ -393,7 +394,7 @@
   function exportSVG(payload) {
     const p = validateExport(payload), { columns, rows, width_cm, height_cm, cells, palette } = p;
     if (p.grid_shape === "hexagon") {
-      const polygons = cells.map((cell, i) => `<polygon points="${clippedCell(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>`).join("");
+      const polygons = cells.map((cell, i) => `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>`).join("");
       const lines = p.show_grid ? cells.map((_, i) => `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"/>`).join("") : "";
       return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 1 1" preserveAspectRatio="none" overflow="hidden"><title>Mosaic — ${cells.length} hexagons, ${width_cm} × ${height_cm} cm</title>${polygons}${lines ? `<g fill="none" stroke="${darkest(palette)}" stroke-width="${.025 / columns}">${lines}</g>` : ""}</svg>`;
     }
@@ -438,7 +439,7 @@
       });
       if (p.show_grid) {
         ctx.strokeStyle = darkest(p.palette);
-        ctx.lineWidth = Math.max(.5, Math.min(width / (p.columns - 1), height / ((p.rows - 1) * .75)) * .025);
+        ctx.lineWidth = Math.max(.5, Math.min(width / (p.columns + .5), height / ((p.rows - 1) * .75 + 1)) * .025);
         p.cells.forEach((_, i) => { path(cellPolygon(p, i)); ctx.stroke(); });
       }
       return canvas;

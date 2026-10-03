@@ -66,6 +66,6 @@ test("hexagon selection in Original defers tile calculation until Mosaic and pre
   assert.equal(w.messages[0].result.cells, undefined);
   await w.send({ grid: 5, shape: "hexagon", brightness: 30 });
   assert.equal(w.calls.rasterize, 1);
-  assert.equal(w.messages[1].result.cells.length, 42);
+  assert.equal(w.messages[1].result.cells.length, 30);
   assert.equal(w.writes.length, 1);
 });
