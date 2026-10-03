@@ -28,6 +28,8 @@ The `.github/workflows/pages.yml` workflow checks the app and deploys only `stat
 
 Local screenshots/previews, backups, and Python caches are excluded by `.gitignore`. The gallery sample pictures in `static/samples/` are required website assets and remain tracked. Future updates can be published with `git add`, `git commit`, and `git push`.
 
+During deployment, JavaScript and CSS URLs (including the worker and its imports) are versioned with the Git commit hash. Updates therefore load fresh assets instead of reusing a previous deployment from the browser or Pages cache. The generated `_site/` folder is also ignored by Git.
+
 ## Use
 
 - Drop an image onto the upload area or browse for a file. Successfully decoded uploads are added to the six-column gallery below the upload area and selected automatically. Click any thumbnail to select it; clicking the current selection preserves edits. Switching images clears the crop and painted edits while retaining palette, adjustment, grid, framing, and print settings. Uploaded gallery pictures stay available in the current tab until reload; export mosaics to save your work.
