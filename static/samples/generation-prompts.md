@@ -2,6 +2,8 @@
 
 Generated with the built-in image generation tool on 2026-10-03. The original sunset remains a local canvas illustration.
 
+Gallery PNGs are resized to 640 × 640 with Lanczos resampling and lossless PNG compression for faster loading. Original generated images remain recoverable from Git history. The canvas sunset also renders at 640 × 640.
+
 ## bright-cat.png
 
 Use case: stylized-concept. Asset type: square source image for a mosaic app's example gallery. A single sitting cat in bold, bright pop-art colors: electric turquoise fur, magenta and tangerine patches, yellow eyes, deep purple outlines, cobalt background. Charming expressive face, clearly visible ears and curved tail. Clean screen-print illustration, large distinct color regions, strong silhouette readable at 21 by 21 cells. Square composition, cat fills most of the frame with a little breathing room. No text, lettering, borders, logos, watermark, or pixel grid.

@@ -414,8 +414,9 @@ async function loadFile(file) {
 
 function makeSample() {
   const canvas = document.createElement("canvas");
-  canvas.width = 800; canvas.height = 800;
+  canvas.width = 640; canvas.height = 640;
   const ctx = canvas.getContext("2d");
+  ctx.scale(canvas.width / 800, canvas.height / 800);
   const sky = ctx.createLinearGradient(0, 0, 0, 800);
   sky.addColorStop(0, "#E8BF8B"); sky.addColorStop(.55, "#D38D58"); sky.addColorStop(1, "#EB653D");
   ctx.fillStyle = sky; ctx.fillRect(0, 0, 800, 800);

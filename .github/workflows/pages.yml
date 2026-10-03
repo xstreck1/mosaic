@@ -41,7 +41,7 @@ jobs:
 
           shutil.copytree("static", "_site")
           version = os.environ["GITHUB_SHA"]
-          asset = re.compile(r"(\./[A-Za-z0-9_./-]+\.(?:js|css))(?=[\"'])")
+          asset = re.compile(r"(\./[A-Za-z0-9_./-]+\.(?:js|css)|[A-Za-z0-9_-]+\.png)(?=[\"'])")
           for path in Path("_site").rglob("*"):
               if path.suffix not in (".html", ".js"):
                   continue
