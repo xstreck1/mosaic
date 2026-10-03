@@ -56,3 +56,16 @@ test("selecting Mosaic calculates squares once using the latest adjustment value
   assert.equal(w.messages[2].result.preview_only, false);
   assert.equal(w.writes.length, 2, "mosaic and Original share the cached adjusted preview");
 });
+
+test("hexagon selection in Original defers tile calculation until Mosaic and preserves the shape", async () => {
+  const w = worker();
+  await w.send({ grid: 5, shape: "hexagon", previewOnly: true, brightness: 30 });
+  assert.equal(w.calls.rasterize, 0);
+  assert.equal(w.messages[0].result.grid_shape, "hexagon");
+  assert.equal(w.messages[0].result.grid_size, 5);
+  assert.equal(w.messages[0].result.cells, undefined);
+  await w.send({ grid: 5, shape: "hexagon", brightness: 30 });
+  assert.equal(w.calls.rasterize, 1);
+  assert.equal(w.messages[1].result.cells.length, 42);
+  assert.equal(w.writes.length, 1);
+});

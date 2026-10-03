@@ -15,7 +15,7 @@ function updateAdjustments(editingName = null) {
 }
 const state = { source: null, sourceId: 0, sourceSequence: 0, sourceName: "Sunset study", sourceStyle: "Flat illustration", isDemo: true, result: null,
   preview: null, mosaicDirty: true,
-  palette: "image", view: "mosaic", linked: true, controller: null, revision: 0,
+  palette: "image", shape: "square", view: "mosaic", linked: true, controller: null, revision: 0,
   gallery: [], gallerySequence: 0, selectedGalleryId: null,
   timer: null, noticeTimer: null, busy: false, exporting: false, printing: false, pendingSource: null,
   editor: null, selectedColor: 0, pointerId: null, lastCell: null,
@@ -38,14 +38,14 @@ function validDimensions() {
 function setBusy(busy) {
   if (busy) finishStroke();
   state.busy = busy;
-  $("processing").lastChild.textContent = state.view === "original" ? " Updating image…" : " Making squares…";
+  $("processing").lastChild.textContent = state.view === "original" ? " Updating image…" : " Making mosaic…";
   $("processing").hidden = !busy;
   $("canvasWorkspace").setAttribute("aria-busy", String(busy));
   updateActionButtons();
   $("statusText").replaceChildren();
   const dot = document.createElement("i");
-  $("statusText").append(dot, document.createTextNode(busy ? state.view === "original" ? "Updating image…" : "Making squares…" :
-    state.mosaicDirty && state.preview ? "Select Mosaic to make squares" : state.result ? "Ready to export" : "Choose an image"));
+  $("statusText").append(dot, document.createTextNode(busy ? state.view === "original" ? "Updating image…" : "Making mosaic…" :
+    state.mosaicDirty && state.preview ? "Select Mosaic to make tiles" : state.result ? "Ready to export" : "Choose an image"));
 }
 
 function updateActionButtons() {
@@ -66,7 +66,7 @@ function updateEditingControls() {
   $("previewCanvas").classList.toggle("editable", !unavailable && state.view === "mosaic");
   for (const button of $("swatches").children) button.disabled = unavailable;
   const edits = state.editor?.undoStack.length || 0;
-  $("editStatus").textContent = state.mosaicDirty ? "Select Mosaic to calculate squares, then paint." :
+  $("editStatus").textContent = state.mosaicDirty ? "Select Mosaic to calculate tiles, then paint." :
     state.view === "original" ? "Choose a palette color to switch to the mosaic and paint." :
     `${edits ? `${edits} edit${edits === 1 ? "" : "s"} · ` : ""}Pick a palette color, then click or drag to paint.`;
 }
@@ -78,7 +78,7 @@ function updatePaletteUsage() {
   [...$("swatches").children].forEach((button, i) => {
     const selected = i === state.selectedColor;
     const name = result.palette_names[i] || `Color ${i + 1}`;
-    const label = `${name} · ${result.palette[i]} · ${result.counts[i]} ${result.counts[i] === 1 ? "square" : "squares"}`;
+    const label = `${name} · ${result.palette[i]} · ${result.counts[i]} ${result.grid_shape === "hexagon" ? result.counts[i] === 1 ? "hexagon" : "hexagons" : result.counts[i] === 1 ? "square" : "squares"}`;
     button.title = label;
     button.setAttribute("aria-label", label);
     button.setAttribute("aria-pressed", String(selected));
@@ -125,15 +125,27 @@ function historyAction(action) {
 
 function cellAtPointer(event) {
   const bounds = $("previewCanvas").getBoundingClientRect();
-  const x = Math.floor((event.clientX - bounds.left) / bounds.width * state.result.columns);
-  const y = Math.floor((event.clientY - bounds.top) / bounds.height * state.result.rows);
-  if (x < 0 || y < 0 || x >= state.result.columns || y >= state.result.rows) return null;
-  return { x, y };
+  const px = (event.clientX - bounds.left) / bounds.width, py = (event.clientY - bounds.top) / bounds.height;
+  const index = MosaicRasterizer.cellAtPoint(state.result, px, py);
+  if (index === null) return null;
+  return { x: index % state.result.columns, y: Math.floor(index / state.result.columns), px, py, index };
 }
 
 function paintToPointer(event) {
   const next = cellAtPointer(event);
   if (!next) { state.lastCell = null; return; }
+  if (state.result.grid_shape === "hexagon") {
+    const previous = state.lastCell || next;
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(next.px - previous.px) * state.result.columns, Math.abs(next.py - previous.py) * state.result.rows) * 3));
+    let changed = false;
+    for (let i = 0; i <= steps; i++) {
+      const index = MosaicRasterizer.cellAtPoint(state.result, previous.px + (next.px - previous.px) * i / steps, previous.py + (next.py - previous.py) * i / steps);
+      if (index !== null) changed = state.editor.paint(index) || changed;
+    }
+    state.lastCell = next;
+    if (changed) refreshEdits();
+    return;
+  }
   // Fill cells between pointer events so a fast drag doesn't leave gaps.
   let { x, y } = state.lastCell || next;
   const dx = Math.abs(next.x - x), dy = -Math.abs(next.y - y);
@@ -152,11 +164,17 @@ function paintToPointer(event) {
 
 function mosaicPayload() {
   return { columns: state.result.columns, rows: state.result.rows, cells: state.result.cells,
+    grid_shape: state.result.grid_shape, mirror: state.result.mirror,
     palette: state.result.palette, width_cm: Number($("widthCm").value), height_cm: Number($("heightCm").value), show_grid: $("gridLines").checked };
 }
 
 function preparePrint() {
   const payload = mosaicPayload();
+  if (payload.grid_shape === "hexagon") {
+    const documentSVG = new DOMParser().parseFromString(MosaicRasterizer.exportSVG(payload), "image/svg+xml");
+    $("printArea").replaceChildren(document.importNode(documentSVG.documentElement, true));
+    return;
+  }
   const element = (tag, attributes) => {
     const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
     Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, String(value)));
@@ -180,13 +198,15 @@ function preparePrint() {
 function updateDimensions() {
   const width = Number($("widthCm").value), height = Number($("heightCm").value);
   const grid = Number($("gridSize").value);
-  $("gridLabel").textContent = `${grid} × ${grid}`;
-  $("previewTag").textContent = `${grid} × ${grid} squares`;
-  $("squareCount").textContent = (grid * grid).toLocaleString();
+  const hex = state.shape === "hexagon", layout = MosaicRasterizer.gridLayout(grid, state.shape);
+  $("gridLabel").textContent = hex ? `${grid} across` : `${grid} × ${grid}`;
+  $("previewTag").textContent = hex ? `${layout.columns * layout.rows} hexagons` : `${grid} × ${grid} squares`;
+  $("squareCount").textContent = (layout.columns * layout.rows).toLocaleString();
+  $("cellCountLabel").textContent = hex ? "hexagons" : "squares";
   const valid = validDimensions();
   $("canvasSize").textContent = valid ? `${width} × ${height} cm` : "Set print dimensions";
   $("physicalSize").textContent = valid ? `${width} × ${height}` : "—";
-  $("cellSize").textContent = valid ? `Each square is ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / grid).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
+  $("cellSize").textContent = valid ? hex ? `Hexagons are approximately ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75)).toFixed(2)} mm. Edge tiles are trimmed.` : `Each square is ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / grid).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
   updateActionButtons();
   drawPreview();
 }
@@ -210,6 +230,11 @@ function drawPreview() {
   const scale = Math.min(window.devicePixelRatio || 1, 3);
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
+  if (state.result.grid_shape === "hexagon") {
+    MosaicRasterizer.paintMosaic(canvas, { ...state.result, show_grid: $("gridLines").checked });
+    canvas.setAttribute("aria-label", `${state.result.cells.length} hexagon mosaic using ${state.result.used_colors} colors`);
+    return;
+  }
   const ctx = canvas.getContext("2d");
   const { columns, rows, cells, palette } = state.result;
   cells.forEach((cell, i) => {
@@ -268,7 +293,7 @@ function renderResult(result) {
     swatch.classList.toggle("unused", result.counts[i] === 0);
     swatch.style.backgroundColor = color;
     swatch.tabIndex = 0;
-    const label = `${result.palette_names[i] || `Color ${i + 1}`} · ${color} · ${result.counts[i]} ${result.counts[i] === 1 ? "square" : "squares"}`;
+    const label = `${result.palette_names[i] || `Color ${i + 1}`} · ${color} · ${result.counts[i]} ${result.grid_shape === "hexagon" ? result.counts[i] === 1 ? "hexagon" : "hexagons" : result.counts[i] === 1 ? "square" : "squares"}`;
     swatch.title = label;
     swatch.setAttribute("aria-label", label);
     swatch.addEventListener("click", () => selectColor(i));
@@ -290,7 +315,7 @@ async function convert(candidate = null, crop = undefined) {
   state.controller?.abort();
   state.controller = new AbortController();
   setBusy(true);
-  const options = { grid: $("gridSize").value, palette: state.palette, fit: "contain",
+  const options = { grid: $("gridSize").value, shape: state.shape, palette: state.palette, fit: "contain",
     colors: $("colorLimit").value, mirror: $("mirrorHorizontal").checked, previewOnly: state.view === "original" };
   for (const name of adjustmentNames) options[name] = $(name).value;
   const requestedCrop = state.pendingCrop !== undefined ? state.pendingCrop : state.crop;
@@ -322,7 +347,9 @@ async function convert(candidate = null, crop = undefined) {
       notify(error.message, true);
       if (state.preview) {
         state.mosaicDirty = state.preview !== state.result;
-        $("gridSize").value = state.preview.columns;
+        $("gridSize").value = state.preview.grid_size;
+        state.shape = state.preview.grid_shape;
+        syncGridButtons();
         state.palette = state.preview.palette_mode;
         $("colorLimit").max = MosaicRasterizer.PRESETS[state.palette].max;
         $("colorLimit").value = state.preview.color_count;
@@ -346,6 +373,13 @@ function scheduleConversion() {
   updateDimensions();
   setBusy(true);
   state.timer = setTimeout(() => convert(), 140);
+}
+
+function syncGridButtons() {
+  for (const [id, shape] of [["squareGrid", "square"], ["hexagonGrid", "hexagon"]]) {
+    $(id).classList.toggle("active", state.shape === shape);
+    $(id).setAttribute("aria-pressed", String(state.shape === shape));
+  }
 }
 
 function syncPaletteButtons() {
@@ -651,6 +685,10 @@ $("dropzone").addEventListener("drop", (event) => loadFile(event.dataTransfer.fi
 window.addEventListener("dragover", (event) => event.preventDefault());
 window.addEventListener("drop", (event) => event.preventDefault());
 $("gridSize").addEventListener("input", scheduleConversion);
+for (const [id, shape] of [["squareGrid", "square"], ["hexagonGrid", "hexagon"]]) $(id).addEventListener("click", () => {
+  if (state.shape === shape) return;
+  finishStroke(); state.shape = shape; syncGridButtons(); scheduleConversion();
+});
 for (const name of adjustmentNames) {
   const slider = $(name), field = $(name + "Value");
   slider.addEventListener("input", () => {
@@ -713,7 +751,7 @@ for (const [id, other] of [["widthCm", "heightCm"], ["heightCm", "widthCm"]]) {
 }
 $("exportButton").addEventListener("click", () => {
   if (!state.result || !validDimensions() || state.busy || state.mosaicDirty) return;
-  $("exportSummary").textContent = `${state.result.columns} × ${state.result.rows} squares · ${$("widthCm").value} × ${$("heightCm").value} cm · ${state.result.palette.length}-color palette`;
+  $("exportSummary").textContent = `${state.result.grid_shape === "hexagon" ? `${state.result.cells.length} hexagons` : `${state.result.columns} × ${state.result.rows} squares`} · ${$("widthCm").value} × ${$("heightCm").value} cm · ${state.result.palette.length}-color palette`;
   $("exportDialog").showModal();
 });
 $("closeExport").addEventListener("click", () => $("exportDialog").close());

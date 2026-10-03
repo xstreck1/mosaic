@@ -181,13 +181,118 @@
     number(width, "Image width", 1, 25000000, true); number(height, "Image height", 1, 25000000, true);
     if (width * height > 25000000) throw new Error("The image must be no larger than 25 megapixels.");
     const size = number(options.grid ?? 21, "Grid size", 5, 64, true), mode = options.palette === "studio" ? "vibrant" : options.palette ?? "vibrant", fit = options.fit ?? "cover", mirror = options.mirror ?? false;
+    const grid_shape = options.shape ?? "square";
+    if (!["square", "hexagon"].includes(grid_shape)) throw new Error("Choose a valid grid shape.");
     if (typeof mirror !== "boolean") throw new Error("Choose a valid mirror setting.");
     if (!Object.hasOwn(PRESETS, mode) || !["cover", "contain"].includes(fit)) throw new Error("Choose a valid palette and framing mode.");
     const color_count = number(options.colors ?? Math.min(20, PRESETS[mode].max), "Color limit", 2, PRESETS[mode].max, true);
     const [left, top, right, bottom] = cropBounds(width, height, options.crop);
-    return { columns: size, rows: size, palette_mode: mode, color_count, fit_mode: fit, mirror, adjustments: adjustmentsFor(options),
+    return { ...gridLayout(size, grid_shape), grid_size: size, grid_shape, palette_mode: mode, color_count, fit_mode: fit, mirror, adjustments: adjustmentsFor(options),
       source_size: [width, height], crop_size: [right - left, bottom - top],
       crop: options.crop == null ? null : [left / width, top / height, right / width, bottom / height] };
+  }
+
+  function gridLayout(size, shape = "square") {
+    return shape === "hexagon" ? { columns: size + 1, rows: Math.round(size * 2 / Math.sqrt(3)) + 1 } : { columns: size, rows: size };
+  }
+
+  // Normalized geometry is shared by sampling, preview, pointer picking and exports.
+  // Extra boundary cells cover the whole rectangle; staggered rows reflect with edits.
+  function cellPolygon(grid, index) {
+    const col = index % grid.columns, row = Math.floor(index / grid.columns);
+    if (grid.grid_shape !== "hexagon") return [[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]]
+      .map(([x, y]) => [x / grid.columns, y / grid.rows]);
+    const offset = (row % 2 ? .25 : -.25) * (grid.mirror ? -1 : 1);
+    const cx = col + offset, cy = row * .75, width = grid.columns - 1, height = (grid.rows - 1) * .75;
+    return [[0, -.5], [.5, -.25], [.5, .25], [0, .5], [-.5, .25], [-.5, -.25]]
+      .map(([x, y]) => [(cx + x) / width, (cy + y) / height]);
+  }
+
+  function clipPolygon(points, axis, boundary, greater) {
+    const output = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      const insideA = greater ? a[axis] >= boundary : a[axis] <= boundary;
+      const insideB = greater ? b[axis] >= boundary : b[axis] <= boundary;
+      if (insideA) output.push(a);
+      if (insideA !== insideB) {
+        const t = (boundary - a[axis]) / (b[axis] - a[axis]);
+        output.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+      }
+    }
+    return output;
+  }
+
+  function clippedCell(grid, index) {
+    let points = cellPolygon(grid, index);
+    for (const [axis, boundary, greater] of [[0, 0, true], [0, 1, false], [1, 0, true], [1, 1, false]])
+      points = clipPolygon(points, axis, boundary, greater);
+    return points;
+  }
+
+  function polygonArea(points) {
+    let area = 0;
+    points.forEach((a, i) => { const b = points[(i + 1) % points.length]; area += a[0] * b[1] - b[0] * a[1]; });
+    return Math.abs(area) / 2;
+  }
+
+  function cellAtPoint(grid, x, y) {
+    if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
+    if (grid.grid_shape !== "hexagon") return Math.floor(y * grid.rows) * grid.columns + Math.floor(x * grid.columns);
+    const nearRow = Math.round(y * (grid.rows - 1));
+    for (let row = Math.max(0, nearRow - 1); row <= Math.min(grid.rows - 1, nearRow + 1); row++) {
+      const offset = (row % 2 ? .25 : -.25) * (grid.mirror ? -1 : 1);
+      const nearCol = Math.round(x * (grid.columns - 1) - offset);
+      for (let col = Math.max(0, nearCol - 1); col <= Math.min(grid.columns - 1, nearCol + 1); col++) {
+        const index = row * grid.columns + col, points = cellPolygon(grid, index);
+        if (points.every((a, i) => { const b = points[(i + 1) % points.length]; return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) >= -1e-12; })) return index;
+      }
+    }
+    return null;
+  }
+
+  // Exact pixel coverage for a scanline band whose polygon edges are linear.
+  function bandArea(l0, l1, r0, r1, x0, x1, height) {
+    if (Math.max(l0, l1) <= x0 && Math.min(r0, r1) >= x1) return (x1 - x0) * height;
+    const splits = [0, 1];
+    for (const [a, b] of [[l0, l1], [r0, r1]]) if (a !== b)
+      for (const x of [x0, x1]) { const t = (x - a) / (b - a); if (t > 0 && t < 1) splits.push(t); }
+    splits.sort((a, b) => a - b);
+    let area = 0;
+    for (let i = 1; i < splits.length; i++) {
+      const t = (splits[i] + splits[i - 1]) / 2;
+      area += Math.max(0, Math.min(x1, r0 + (r1 - r0) * t) - Math.max(x0, l0 + (l1 - l0) * t)) * (splits[i] - splits[i - 1]) * height;
+    }
+    return area;
+  }
+
+  function hexSamples(data, width, bounds, side, originX, originY, settings, adjust) {
+    const [left, top, right, bottom] = bounds;
+    const dx = side / (settings.columns - 1), dy = side / ((settings.rows - 1) * .75), samples = [];
+    const grid = { ...settings, mirror: false };
+    for (let index = 0; index < grid.columns * grid.rows; index++) {
+      const points = cellPolygon(grid, index), cx = originX + points[0][0] * side, cy = originY + (points[0][1] * side + dy / 2);
+      const area = polygonArea(clippedCell(grid, index)) * side * side;
+      let red = 255 * area, green = red, blue = red;
+      const halfWidth = y => dx * Math.min(.5, Math.max(0, 1 - 2 * Math.abs((y - cy) / dy)));
+      for (let y = Math.max(top, Math.floor(cy - dy / 2), Math.floor(originY)); y < Math.min(bottom, Math.ceil(cy + dy / 2), Math.ceil(originY + side)); y++) {
+        const y0 = Math.max(y, cy - dy / 2, originY), y1 = Math.min(y + 1, cy + dy / 2, originY + side);
+        if (y1 <= y0) continue;
+        const bands = [y0, ...[cy - dy / 4, cy + dy / 4].filter(v => v > y0 && v < y1), y1];
+        for (let b = 1; b < bands.length; b++) {
+          const a = bands[b - 1], z = bands[b], h0 = halfWidth(a), h1 = halfWidth(z);
+          const l0 = cx - h0, l1 = cx - h1, r0 = cx + h0, r1 = cx + h1;
+          for (let x = Math.max(left, Math.floor(Math.min(l0, l1)), Math.floor(originX)); x < Math.min(right, Math.ceil(Math.max(r0, r1)), Math.ceil(originX + side)); x++) {
+            const weight = bandArea(l0, l1, r0, r1, Math.max(x, originX), Math.min(x + 1, originX + side), z - a) * data[(y * width + x) * 4 + 3] / 255;
+            if (!weight) continue;
+            const i = (y * width + x) * 4, color = adjust(data[i], data[i + 1], data[i + 2]);
+            red += ((color >> 16) - 255) * weight; green += (((color >> 8) & 255) - 255) * weight; blue += ((color & 255) - 255) * weight;
+          }
+        }
+      }
+      samples.push([clamp(red / area), clamp(green / area), clamp(blue / area)]);
+    }
+    return samples;
   }
 
   function cropBounds(width, height, crop) {
@@ -235,14 +340,14 @@
   function rasterizePixels(data, width, height, options = {}) {
     const settings = imageSettings(width, height, options);
     if (!data || data.length !== width * height * 4) throw new Error("Invalid image pixels.");
-    const { columns: size, palette_mode: mode, color_count: limit, fit_mode: fit, mirror, adjustments } = settings;
+    const { grid_size: size, columns, rows, palette_mode: mode, color_count: limit, fit_mode: fit, mirror, adjustments } = settings;
     const bounds = cropBounds(width, height, options.crop), [left, top, right, bottom] = bounds;
     const cw = right - left, ch = bottom - top, side = fit === "cover" ? Math.min(cw, ch) : Math.max(cw, ch);
     // Sample in original pixel coordinates. Outside a contained image is white.
     const originX = left + (cw - side) / 2, originY = top + (ch - side) / 2, cellSide = side / size;
     const adjust = colorAdjuster(adjustments);
-    const samples = [];
-    for (let row = 0; row < size; row++) {
+    const samples = settings.grid_shape === "hexagon" ? hexSamples(data, width, bounds, side, originX, originY, settings, adjust) : [];
+    for (let row = 0; settings.grid_shape === "square" && row < size; row++) {
       for (let col = 0; col < size; col++) {
         const x0 = originX + col * cellSide, x1 = x0 + cellSide, y0 = originY + row * cellSide, y1 = y0 + cellSide;
         const area = cellSide * cellSide;
@@ -263,7 +368,7 @@
     let palette, cells, names = [];
     if (mode === "image") ({ palette, cells } = adaptivePalette(samples, limit));
     else ({ palette, cells, names } = fixedPalette(samples, PRESETS[mode], limit));
-    if (mirror) cells = cells.flatMap((_, i) => i % size === 0 ? cells.slice(i, i + size).reverse() : []);
+    if (mirror) cells = cells.flatMap((_, i) => i % columns === 0 ? cells.slice(i, i + columns).reverse() : []);
     const counts = Array(palette.length).fill(0); cells.forEach(i => counts[i]++);
     return { ...settings, cells, palette, counts,
       palette_names: names,
@@ -275,16 +380,23 @@
 
   function validateExport(payload) {
     if (!payload || typeof payload !== "object") throw new Error("Invalid export data.");
-    const columns = number(payload.columns, "Columns", 5, 64, true), rows = number(payload.rows, "Rows", 5, 64, true);
+    const grid_shape = payload.grid_shape ?? "square", mirror = payload.mirror ?? false;
+    if (!["square", "hexagon"].includes(grid_shape) || typeof mirror !== "boolean") throw new Error("Invalid grid shape or mirror setting.");
+    const columns = number(payload.columns, "Columns", 5, grid_shape === "hexagon" ? 65 : 64, true), rows = number(payload.rows, "Rows", 5, grid_shape === "hexagon" ? 75 : 64, true);
     const width_cm = number(payload.width_cm ?? 11, "Width", 1, 50), height_cm = number(payload.height_cm ?? 11, "Height", 1, 50);
     if (!Array.isArray(payload.palette) || payload.palette.length < 1 || payload.palette.length > 64 || payload.palette.some(c => typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c))) throw new Error("Choose a valid palette with 1 to 64 colors.");
     if (!Array.isArray(payload.cells) || payload.cells.length !== columns * rows || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
     if (payload.show_grid !== undefined && typeof payload.show_grid !== "boolean") throw new Error("Invalid grid option.");
-    return { ...payload, columns, rows, width_cm, height_cm, show_grid: payload.show_grid ?? false };
+    return { ...payload, columns, rows, grid_shape, mirror, width_cm, height_cm, show_grid: payload.show_grid ?? false };
   }
 
   function exportSVG(payload) {
     const p = validateExport(payload), { columns, rows, width_cm, height_cm, cells, palette } = p;
+    if (p.grid_shape === "hexagon") {
+      const polygons = cells.map((cell, i) => `<polygon points="${clippedCell(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>`).join("");
+      const lines = p.show_grid ? cells.map((_, i) => `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"/>`).join("") : "";
+      return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 1 1" preserveAspectRatio="none" overflow="hidden"><title>Mosaic — ${cells.length} hexagons, ${width_cm} × ${height_cm} cm</title>${polygons}${lines ? `<g fill="none" stroke="${darkest(palette)}" stroke-width="${.025 / columns}">${lines}</g>` : ""}</svg>`;
+    }
     let svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 ${columns} ${rows}" preserveAspectRatio="none" shape-rendering="crispEdges">`;
     svg += `<title>Mosaic — ${columns} × ${rows} squares, ${width_cm} × ${height_cm} cm</title>`;
     cells.forEach((cell, i) => { svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="${palette[cell]}"/>`; });
@@ -305,7 +417,32 @@
   function paintExport(canvas, payload) {
     const p = validateExport(payload), [width, height] = pngDimensions(p);
     canvas.width = width; canvas.height = height;
+    return paintMosaic(canvas, p);
+  }
+
+  function paintMosaic(canvas, p) {
+    const width = canvas.width, height = canvas.height;
     const ctx = canvas.getContext("2d");
+    if (p.grid_shape === "hexagon") {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height);
+      const path = points => {
+        ctx.beginPath();
+        points.forEach(([x, y], i) => i ? ctx.lineTo(x * width, y * height) : ctx.moveTo(x * width, y * height));
+        ctx.closePath();
+      };
+      // A hairline of each tile's own color prevents antialiasing seams.
+      ctx.lineWidth = .7; ctx.lineJoin = "round";
+      p.cells.forEach((cell, i) => {
+        path(cellPolygon(p, i)); ctx.fillStyle = p.palette[cell]; ctx.strokeStyle = p.palette[cell]; ctx.fill(); ctx.stroke();
+      });
+      if (p.show_grid) {
+        ctx.strokeStyle = darkest(p.palette);
+        ctx.lineWidth = Math.max(.5, Math.min(width / (p.columns - 1), height / ((p.rows - 1) * .75)) * .025);
+        p.cells.forEach((_, i) => { path(cellPolygon(p, i)); ctx.stroke(); });
+      }
+      return canvas;
+    }
     p.cells.forEach((cell, i) => {
       const x = i % p.columns, y = Math.floor(i / p.columns), left = Math.round(x * width / p.columns), top = Math.round(y * height / p.rows);
       ctx.fillStyle = p.palette[cell];
@@ -320,5 +457,5 @@
     return canvas;
   }
 
-  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport };
+  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, gridLayout, cellPolygon, clippedCell, cellAtPoint, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport, paintMosaic };
 });
