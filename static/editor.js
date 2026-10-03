@@ -17,6 +17,18 @@ class MosaicEditor {
     this.stroke = { color, changes: new Map() };
   }
 
+  addColor(color, palette) {
+    if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Enter a six-digit hex color.");
+    const normalized = color.toUpperCase();
+    const existing = palette.findIndex(entry => entry.toUpperCase() === normalized);
+    if (existing >= 0) return existing;
+    if (palette.length >= 64) throw new Error("This mosaic already has 64 colors. Choose an existing swatch or reduce the color limit first.");
+    // Append rather than replace: existing cells and history keep their colors.
+    palette.push(normalized);
+    this.paletteSize = palette.length;
+    return palette.length - 1;
+  }
+
   paint(index) {
     if (!this.stroke || !Number.isInteger(index) || index < 0 || index >= this.cells.length) return false;
     if (this.cells[index] === this.stroke.color) return false;

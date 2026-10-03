@@ -60,7 +60,11 @@ function updateActionButtons() {
 function updateEditingControls() {
   const unavailable = state.busy || state.mosaicDirty || !state.editor;
   $("swatches").hidden = state.mosaicDirty;
-  $("swatches").nextElementSibling.hidden = state.mosaicDirty;
+  $("paletteFooter").hidden = state.mosaicDirty;
+  $("customColorControls").hidden = state.mosaicDirty;
+  $("customColor").disabled = unavailable;
+  $("customColorHex").disabled = unavailable;
+  $("useCustomColor").disabled = unavailable || !$("customColorHex").value || !$("customColorHex").checkValidity();
   $("undoButton").disabled = unavailable || !state.editor.canUndo;
   $("redoButton").disabled = unavailable || !state.editor.canRedo;
   $("previewCanvas").classList.toggle("editable", !unavailable && state.view === "mosaic");
@@ -74,6 +78,8 @@ function updateEditingControls() {
 function updatePaletteUsage() {
   if (!state.result) return;
   const result = state.result;
+  $("colorCount").textContent = String(result.palette.length);
+  $("paletteTitle").textContent = `Your ${result.palette.length} color${result.palette.length === 1 ? "" : "s"}`;
   $("usedColors").textContent = `${result.used_colors} of ${result.palette.length} colors used`;
   [...$("swatches").children].forEach((button, i) => {
     const selected = i === state.selectedColor;
@@ -87,6 +93,8 @@ function updatePaletteUsage() {
   });
   $("brushSwatch").style.backgroundColor = result.palette[state.selectedColor];
   $("brushName").textContent = result.palette_names[state.selectedColor] || result.palette[state.selectedColor];
+  $("customColor").value = result.palette[state.selectedColor];
+  $("customColorHex").value = result.palette[state.selectedColor].toUpperCase();
 }
 
 function refreshEdits() {
@@ -115,6 +123,22 @@ function selectColor(index) {
   state.selectedColor = index;
   if (state.view !== "mosaic") setView("mosaic");
   updatePaletteUsage();
+  updateEditingControls();
+}
+
+function useCustomColor() {
+  if (state.busy || state.mosaicDirty || !state.editor || !$("customColorHex").value || !$("customColorHex").reportValidity()) return;
+  const color = "#" + $("customColorHex").value.replace(/^#/, "");
+  finishStroke();
+  try {
+    const result = state.result, previousSize = result.palette.length;
+    const index = state.editor.addColor(color, result.palette);
+    if (result.palette.length > previousSize) result.palette_names[index] = "Custom color " + result.palette[index];
+    state.selectedColor = index;
+    renderSwatches();
+    if (state.view !== "mosaic") setView("mosaic");
+    refreshEdits();
+  } catch (error) { notify(error.message, true); }
 }
 
 function historyAction(action) {
@@ -277,13 +301,21 @@ function renderResult(result) {
     return;
   }
   const previousPalette = state.result?.palette;
-  if (!previousPalette || previousPalette.some((color, i) => color !== result.palette[i])) state.selectedColor = 0;
+  if (!previousPalette || previousPalette.length !== result.palette.length || previousPalette.some((color, i) => color !== result.palette[i])) state.selectedColor = 0;
   state.result = result;
   state.mosaicDirty = false;
   state.editor = new MosaicEditor(result.cells, result.palette.length);
   $("colorCount").textContent = String(result.palette.length);
   $("paletteTitle").textContent = `Your ${result.palette.length} color${result.palette.length === 1 ? "" : "s"}`;
   $("usedColors").textContent = `${result.used_colors} of ${result.palette.length} colors used`;
+  renderSwatches();
+  updatePaletteUsage();
+  updateDimensions();
+  setView(state.view);
+}
+
+function renderSwatches() {
+  const result = state.result;
   $("swatches").replaceChildren();
   $("swatches").style.setProperty("--palette-columns", Math.min(10, result.palette.length));
   result.palette.forEach((color, i) => {
@@ -299,9 +331,6 @@ function renderResult(result) {
     swatch.addEventListener("click", () => selectColor(i));
     $("swatches").append(swatch);
   });
-  updatePaletteUsage();
-  updateDimensions();
-  setView(state.view);
 }
 
 async function convert(candidate = null, crop = undefined) {
@@ -669,6 +698,19 @@ for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
 window.addEventListener("blur", finishStroke);
 $("undoButton").addEventListener("click", () => historyAction("undo"));
 $("redoButton").addEventListener("click", () => historyAction("redo"));
+$("customColor").addEventListener("input", () => {
+  $("customColorHex").value = $("customColor").value.toUpperCase();
+  updateEditingControls();
+});
+$("customColorHex").addEventListener("input", () => {
+  const field = $("customColorHex");
+  if (field.value && field.checkValidity()) $("customColor").value = "#" + field.value.replace(/^#/, "");
+  updateEditingControls();
+});
+$("customColorHex").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); useCustomColor(); }
+});
+$("useCustomColor").addEventListener("click", useCustomColor);
 window.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest("input, select, textarea, [contenteditable], dialog")) return;
   const key = event.key.toLowerCase();

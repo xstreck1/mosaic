@@ -137,3 +137,46 @@ test("out-of-bounds cells and palette indices cannot corrupt a mosaic", () => {
   assert.equal(editor.endStroke(), false);
   assert.deepEqual(editor.cells, [0]);
 });
+
+test("custom paint colors preserve previous colors and both history branches", () => {
+  const palette = ["#FFFFFF", "#000000"], cells = [0, 0];
+  const editor = new MosaicEditor(cells, palette.length);
+  editor.beginStroke(1); editor.paint(0); editor.endStroke(); editor.undo();
+  const custom = editor.addColor("#ab12ef", palette);
+  assert.equal(custom, 2);
+  assert.deepEqual(palette, ["#FFFFFF", "#000000", "#AB12EF"]);
+  assert.equal(editor.canRedo, true);
+  editor.redo();
+  editor.beginStroke(custom); editor.paint(1); editor.endStroke();
+  assert.deepEqual(cells.map(index => palette[index]), ["#000000", "#AB12EF"]);
+  editor.undo(); editor.undo();
+  assert.deepEqual(cells, [0, 0]);
+  editor.redo(); editor.redo();
+  assert.deepEqual(cells, [1, 2]);
+  assert.equal(editor.addColor("#AB12EF", palette), custom);
+  assert.equal(palette.length, 3);
+});
+
+test("custom colors respect the export palette limit without blocking existing colors", () => {
+  const palette = Array.from({ length: 64 }, (_, index) => `#${index.toString(16).padStart(6, "0")}`);
+  const editor = new MosaicEditor([0], palette.length);
+  assert.equal(editor.addColor("#00003f", palette), 63);
+  assert.throws(() => editor.addColor("#FF00AA", palette), /64 colors/);
+  for (const value of ["#123", "blue", "#FFFFFF<script>", null]) assert.throws(() => editor.addColor(value, palette), /six-digit/);
+  assert.equal(palette.length, 64);
+  assert.deepEqual(editor.cells, [0]);
+});
+
+test("square and hexagon exports include custom painted colors", () => {
+  const rasterizer = require("../static/rasterizer.js");
+  for (const grid_shape of ["square", "hexagon"]) {
+    const layout = rasterizer.gridLayout(5, grid_shape), palette = ["#FFFFFF"];
+    const cells = new Array(layout.columns * layout.rows).fill(0);
+    const editor = new MosaicEditor(cells, palette.length);
+    const custom = editor.addColor("#14CC88", palette);
+    editor.beginStroke(custom); editor.paint(0); editor.endStroke();
+    const svg = rasterizer.exportSVG({ ...layout, grid_shape, palette, cells, width_cm: 11, height_cm: 11 });
+    assert.match(svg, /fill="#14CC88"/);
+    assert.match(svg, /fill="#FFFFFF"/);
+  }
+});
