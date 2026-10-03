@@ -290,7 +290,7 @@ async function convert(candidate = null, crop = undefined) {
   state.controller?.abort();
   state.controller = new AbortController();
   setBusy(true);
-  const options = { grid: $("gridSize").value, palette: state.palette, fit: $("fitMode").value,
+  const options = { grid: $("gridSize").value, palette: state.palette, fit: "contain",
     colors: $("colorLimit").value, mirror: $("mirrorHorizontal").checked, previewOnly: state.view === "original" };
   for (const name of adjustmentNames) options[name] = $(name).value;
   const requestedCrop = state.pendingCrop !== undefined ? state.pendingCrop : state.crop;
@@ -326,7 +326,6 @@ async function convert(candidate = null, crop = undefined) {
         state.palette = state.preview.palette_mode;
         $("colorLimit").max = MosaicRasterizer.PRESETS[state.palette].max;
         $("colorLimit").value = state.preview.color_count;
-        $("fitMode").value = state.preview.fit_mode;
         $("mirrorHorizontal").checked = state.preview.mirror;
         for (const name of adjustmentNames) $(name).value = state.preview.adjustments[name];
         updateAdjustments();
@@ -611,7 +610,6 @@ $("applyCrop").addEventListener("click", () => {
   rect.height = Math.min(rect.height, height - rect.y);
   const normalized = CropTools.normalized(rect, width, height);
   const full = normalized.every((value, i) => Math.abs(value - [0, 0, 1, 1][i]) < 1e-10);
-  $("fitMode").value = Math.abs(rect.width - rect.height) < .01 ? "cover" : "contain";
   $("cropDialog").close();
   state.mosaicDirty = true;
   convert(null, full ? null : normalized);
@@ -687,7 +685,6 @@ $("resetAdjustments").addEventListener("click", () => {
   updateAdjustments();
   scheduleConversion();
 });
-$("fitMode").addEventListener("change", scheduleConversion);
 $("mirrorHorizontal").addEventListener("change", () => {
   if (state.busy || state.mosaicDirty || !state.editor) { scheduleConversion(); return; }
   finishStroke();
