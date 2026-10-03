@@ -1,0 +1,12 @@
+__pycache__/
+.venv/
+*.pyc
+
+# Local backups and screenshots are never published or tracked.
+/backups/
+/*preview*.jpg
+/*preview*.jpeg
+/*preview*.png
+/*preview*.webp
+/previews/
+/screenshots/

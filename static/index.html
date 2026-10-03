@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5ef">
+  <title>Mosaic — Image mosaic studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e66340'/%3E%3Cpath d='M8 8h7v7H8zm9 0h7v7h-7zM8 17h7v7H8zm9 0h7v7h-7z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./editor.js" defer></script>
+  <script src="./crop.js" defer></script>
+  <script src="./rasterizer.js" defer></script>
+  <script src="./browser-rasterizer.js" defer></script>
+  <script src="./sample-images.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Mosaic home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>Mosaic<span class="brand-dot">.</span></span></a>
+    <span class="brand-description">IMAGE MOSAIC STUDIO</span>
+    <div class="header-actions"><button class="text-button" id="helpButton">How it works <span aria-hidden="true">↗</span></button><button class="button secondary" id="printButton" title="Print mosaic at the selected dimensions" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7z"/><path d="M16 11h1"/></svg> Print</button><button class="button primary" id="exportButton" disabled><span aria-hidden="true">↓</span> Export mosaic</button></div>
+  </header>
+  <main>
+    <div class="intro"><div><p class="eyebrow"><span></span> A SMALL GRID. A NEW PERSPECTIVE.</p><h1>Make every square count.</h1><p class="intro-description">Turn your images into colorful mosaics, one square at a time.</p></div><span class="intro-badge"><span aria-hidden="true">✳</span> Less detail, more character</span></div>
+    <div class="workspace">
+      <aside class="controls" aria-label="Mosaic settings">
+        <section class="control-section source-section">
+          <h2><span class="step">01</span> Your image</h2>
+          <label class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload an image">
+            <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
+            <span class="upload-icon" aria-hidden="true">↥</span><strong>Drop an image here</strong><span>or <u>browse files</u></span><small>PNG, JPG, WebP & more · up to 15 MB</small>
+          </label>
+          <div id="imageGallery" class="image-gallery" role="group" aria-label="Image gallery"></div>
+          <div class="source-info"><img id="sourceThumbnail" alt="Current source image"><div><strong id="sourceName">Sunset study</strong><span id="sourceMeta">Loading sample…</span></div><button id="resetButton" class="icon-button" aria-label="Restore demo image" title="Restore demo image">↺</button></div>
+          <div class="crop-actions"><button class="edit-button" id="cropButton" disabled>Crop image</button><button class="edit-button" id="resetCropButton" disabled>Reset crop</button></div>
+          <p class="field-note crop-status" id="cropStatus">Full image</p>
+        </section>
+        <section class="control-section">
+          <h2><span class="step">02</span> Set your squares</h2>
+          <div class="label-row"><label for="gridSize">Grid size</label><output id="gridLabel" for="gridSize">21 × 21</output></div>
+          <input id="gridSize" class="range" type="range" min="5" max="64" value="21">
+          <div class="range-captions"><span>Chunky</span><span>Detailed</span></div>
+          <label class="check-label"><input type="checkbox" id="gridLines"><span>Show grid lines</span></label>
+          <label class="field-label" for="fitMode">Image framing</label>
+          <select id="fitMode"><option value="cover">Crop to square</option><option value="contain">Fit entire image</option></select>
+          <label class="check-label"><input type="checkbox" id="mirrorHorizontal"><span>Mirror horizontally</span></label>
+          <div class="label-row print-label"><span>Print dimensions</span><button class="link-button" id="lockSize" aria-pressed="true" title="Link width and height">↔ Linked</button></div>
+          <div class="dimensions"><label><span>Width</span><div class="number-field"><input id="widthCm" type="number" min="1" max="50" step="0.1" value="11" aria-label="Print width in centimeters"><span>cm</span></div></label><span class="times" aria-hidden="true">×</span><label><span>Height</span><div class="number-field"><input id="heightCm" type="number" min="1" max="50" step="0.1" value="11" aria-label="Print height in centimeters"><span>cm</span></div></label></div>
+          <p class="field-note" id="cellSize">Each square is 5.24 × 5.24 mm</p>
+        </section>
+        <section class="control-section palette-settings">
+          <h2><span class="step">03</span> Pick your palette</h2>
+          <div class="segmented palette-selector" aria-label="Palette mode"><button class="active" id="imagePalette" aria-pressed="true">From image</button><button id="studioPalette" aria-pressed="false">Vibrant</button><button id="pastelPalette" aria-pressed="false">Pastel</button><button id="neonPalette" aria-pressed="false">Neon</button><button id="grayscalePalette" aria-pressed="false">Grayscale</button><button id="rainbowPalette" aria-pressed="false">Rainbow</button><button id="commodore64Palette" aria-pressed="false">Commodore 64</button></div>
+          <div class="label-row color-limit-label"><label for="colorLimit">Color limit</label><output id="colorLimitValue" for="colorLimit">20</output></div>
+          <input id="colorLimit" class="range" type="range" min="2" max="64" step="1" value="20">
+          <div class="range-captions"><span>2 colors</span><span id="colorLimitMax">64 max</span></div>
+        </section>
+        <section class="control-section adjustment-settings">
+          <h2><span class="step">04</span> Adjust your colors</h2>
+          <div class="adjustment-control"><div class="label-row"><label for="vibrance">Vibrance</label><input id="vibranceValue" class="adjustment-value" type="number" min="-100" max="100" step="1" value="0" aria-label="Vibrance value"></div><input id="vibrance" class="range" type="range" min="-100" max="100" value="0"><div class="range-captions"><span>Muted</span><span>Vivid</span></div></div>
+          <div class="adjustment-control"><div class="label-row"><label for="brightness">Brightness</label><input id="brightnessValue" class="adjustment-value" type="number" min="-100" max="100" step="1" value="0" aria-label="Brightness value"></div><input id="brightness" class="range" type="range" min="-100" max="100" value="0"><div class="range-captions"><span>Darker</span><span>Lighter</span></div></div>
+          <div class="adjustment-control"><div class="label-row"><label for="contrast">Contrast</label><input id="contrastValue" class="adjustment-value" type="number" min="-100" max="100" step="1" value="0" aria-label="Contrast value"></div><input id="contrast" class="range" type="range" min="-100" max="100" value="0"><div class="range-captions"><span>Softer</span><span>Stronger</span></div></div>
+          <button class="edit-button" id="resetAdjustments" disabled>Reset adjustments</button>
+          <p class="field-note">Adjust colors in either view. Select Mosaic to make squares. Changes clear painted edits when the mosaic is rebuilt.</p>
+        </section>
+        <div class="local-note"><span aria-hidden="true">◉</span><span>Processed in your browser.<br>Your image is never uploaded.</span></div>
+      </aside>
+      <section class="preview-panel" aria-label="Mosaic preview">
+        <div class="preview-toolbar"><div class="preview-title"><span class="live-dot"></span><h2>Preview</h2><span id="previewTag">21 × 21 squares</span></div><div class="segmented view-selector"><button id="mosaicView" class="active" aria-pressed="true">Mosaic</button><button id="originalView" aria-pressed="false">Original</button></div></div>
+        <div class="editing-toolbar" aria-label="Mosaic editing tools">
+          <div class="brush-info"><span id="brushSwatch" aria-hidden="true"></span><span>Paint with <strong id="brushName">a palette color</strong></span></div>
+          <div class="history-actions"><button id="undoButton" class="edit-button" title="Undo (Ctrl+Z)" disabled><span aria-hidden="true">↶</span> Undo</button><button id="redoButton" class="edit-button" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><span aria-hidden="true">↷</span> Redo</button></div>
+          <p id="editStatus" class="editing-hint" role="status">Pick a palette color, then click or drag to paint.</p>
+        </div>
+        <div class="canvas-workspace" id="canvasWorkspace">
+          <span class="workspace-corner top-left" aria-hidden="true"></span><span class="workspace-corner top-right" aria-hidden="true"></span><span class="workspace-corner bottom-left" aria-hidden="true"></span><span class="workspace-corner bottom-right" aria-hidden="true"></span>
+          <div class="art-frame" id="artFrame"><canvas id="previewCanvas" width="840" height="840" tabindex="0" aria-label="Mosaic preview"></canvas><img id="originalImage" alt="Original uploaded image" hidden></div>
+          <div class="processing" id="processing" hidden><span class="spinner"></span> Making squares…</div>
+          <div class="canvas-caption"><span id="canvasSize">11 × 11 cm</span><span id="zoomCaption">PRINT SIZE · PREVIEW SCALED TO FIT</span></div>
+        </div>
+        <div class="preview-summary"><div><strong id="squareCount">441</strong><span>squares</span></div><span class="summary-divider"></span><div><strong id="colorCount">20</strong><span>palette colors</span></div><span class="summary-divider"></span><div><strong id="physicalSize">11 × 11</strong><span>cm print size</span></div><span class="ready-status" id="statusText"><i></i> Ready to create</span></div>
+        <div class="palette-display"><div class="palette-heading"><h2 id="paletteTitle">Your colors</h2><span id="usedColors">A palette for every square</span></div><div id="swatches" class="swatches" aria-label="Mosaic color palette"></div><div class="palette-footer"><span>Pick a color, then click or drag to paint squares.</span><span>Grid, framing, palette & adjustments reset edits.</span></div></div>
+      </section>
+    </div>
+    <div class="bottom-note"><span>Made for pixel lovers, makers & curious minds.</span><span>MOSAIC / V1.0</span></div>
+  </main>
+  <section id="printArea" class="print-area" aria-hidden="true"></section>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <dialog id="cropDialog" aria-labelledby="cropTitle">
+    <div class="dialog-heading"><span class="eyebrow">CHOOSE YOUR COMPOSITION</span><button type="button" class="icon-button" id="closeCrop" aria-label="Close crop dialog">×</button></div>
+    <h2 id="cropTitle">Crop your image.</h2>
+    <p class="crop-instructions">Drag inside the selection to move it, drag a corner to resize, or drag outside to draw a new selection.</p>
+    <div id="cropStage" class="crop-stage"><img id="cropImage" alt="Full source image for cropping" draggable="false"><div id="cropSelection" class="crop-selection" tabindex="0" role="group" aria-label="Crop selection. Arrow keys move the selection; Shift moves faster."><button class="crop-handle nw" data-crop-handle="nw" aria-label="Resize crop top left"></button><button class="crop-handle ne" data-crop-handle="ne" aria-label="Resize crop top right"></button><button class="crop-handle sw" data-crop-handle="sw" aria-label="Resize crop bottom left"></button><button class="crop-handle se" data-crop-handle="se" aria-label="Resize crop bottom right"></button></div></div>
+    <div class="crop-options"><label class="check-label"><input id="squareCrop" type="checkbox" checked><span>Square selection</span></label><button id="fullCropSelection" class="edit-button">Use full image</button></div>
+    <div class="crop-fields"><label>Left (px)<input id="cropX" type="number" min="0" step="1"></label><label>Top (px)<input id="cropY" type="number" min="0" step="1"></label><label>Width (px)<input id="cropWidth" type="number" min="1" step="1"></label><label>Height (px)<input id="cropHeight" type="number" min="1" step="1"></label></div>
+    <p class="export-note">Applying or resetting a crop clears painted edits. Freeform crops use Fit entire image to keep the whole selection visible. Your original image stays available.</p>
+    <div class="crop-footer"><button class="button secondary" id="cancelCrop">Cancel</button><button class="button primary" id="applyCrop">Apply crop</button></div>
+  </dialog>
+  <dialog id="exportDialog"><form id="exportForm"><div class="dialog-heading"><span class="eyebrow">TAKE IT WITH YOU</span><button type="button" class="icon-button" id="closeExport" aria-label="Close export dialog">×</button></div><h2>Your mosaic, ready to go.</h2><p id="exportSummary">21 × 21 squares · 11 × 11 cm · 20-color palette</p><label class="export-option"><input type="radio" name="format" value="svg" checked><span><strong>SVG <em>Print perfect</em></strong><small>Vector squares with exact dimensions in centimeters.</small></span></label><label class="export-option"><input type="radio" name="format" value="png"><span><strong>PNG <em>High resolution</em></strong><small>High-resolution squares, without print-size metadata.</small></span></label><p class="export-note">SVG preserves the selected print size. For PNG, set the print dimensions in your print settings.</p><button class="button primary download-button" id="downloadButton" type="submit">↓ Download mosaic</button></form></dialog>
+  <dialog id="helpDialog"><div class="dialog-heading"><span class="eyebrow">A LITTLE GUIDE</span><button class="icon-button" id="closeHelp" aria-label="Close guide">×</button></div><h2>From image to squares.</h2><ol class="help-steps"><li><strong>Start with an image.</strong> Upload your own or explore the sunset sample.</li><li><strong>Find your level of detail.</strong> Each square averages the image beneath it. Smaller grids make bolder shapes.</li><li><strong>Give it some color.</strong> Choose a palette and set its color limit, or extract up to 64 colors from your image. Simple images may use fewer colors.</li><li><strong>Make it yours.</strong> Set the physical dimensions, then export an SVG or a high-resolution PNG. Turn on grid lines for a visible pattern.</li></ol><p class="export-note">GIFs use the first frame. Transparent areas become white. Crop centers the image; Fit adds white space.</p></dialog>
+</body>
+</html>
