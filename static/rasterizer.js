@@ -199,6 +199,24 @@
     return { columns: size, rows };
   }
 
+  function linkedPrintDimensions(grid, width, height, anchor = "width") {
+    const shape = grid.grid_shape;
+    if (!["square", "hexagon"].includes(shape)) throw new Error("Choose a valid grid shape.");
+    const columns = number(grid.columns, "Grid columns", 5, 64, true);
+    const rows = number(grid.rows, "Grid rows", 5, shape === "hexagon" ? 74 : 64, true);
+    width = number(width, "Print width", 1, 50);
+    height = number(height, "Print height", 1, 50);
+    if (!["width", "height"].includes(anchor)) throw new Error("Choose a valid print dimension anchor.");
+    // Account for staggered margins and row overlap to keep hexagons regular.
+    const ratio = shape === "hexagon" ?
+      (columns + .5) / ((rows - 1) * .75 + 1) * Math.sqrt(3) / 2 : columns / rows;
+    const targetHeight = anchor === "height" ? height : width / ratio;
+    const boundedHeight = Math.max(Math.max(1, 1 / ratio), Math.min(Math.min(50, 50 / ratio), targetHeight));
+    // Round both from the continuous dimensions, so rounding the dependent
+    // dimension does not change the value the user just entered.
+    return { width: Math.round(boundedHeight * ratio * 10) / 10, height: Math.round(boundedHeight * 10) / 10 };
+  }
+
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
   // Fit complete hexagons inside the rectangle, leaving a scalloped transparent border.
   // Staggered rows reflect with edits.
@@ -460,5 +478,5 @@
     return canvas;
   }
 
-  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, gridLayout, cellPolygon, clippedCell, cellAtPoint, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport, paintMosaic };
+  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, gridLayout, linkedPrintDimensions, cellPolygon, clippedCell, cellAtPoint, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport, paintMosaic };
 });

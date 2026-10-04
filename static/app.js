@@ -391,6 +391,7 @@ async function convert(candidate = null, crop = undefined) {
         for (const name of adjustmentNames) $(name).value = state.preview.adjustments[name];
         updateAdjustments();
         syncPaletteButtons();
+        syncLinkedPrintDimensions();
         updateDimensions();
       }
     }
@@ -418,6 +419,14 @@ function syncGridButtons() {
 
 function currentGridLayout() {
   return MosaicRasterizer.gridLayout(Number($("gridSize").value), state.shape, state.gridLinked ? null : Number($("gridRows").value));
+}
+
+function syncLinkedPrintDimensions(anchor = "width") {
+  if (!state.linked || !validDimensions()) return;
+  const size = MosaicRasterizer.linkedPrintDimensions(
+    { ...currentGridLayout(), grid_shape: state.shape }, $("widthCm").value, $("heightCm").value, anchor);
+  $("widthCm").value = size.width;
+  $("heightCm").value = size.height;
 }
 
 function syncGridControls() {
@@ -746,8 +755,15 @@ for (const name of ["dragleave", "drop"]) $("dropzone").addEventListener(name, (
 $("dropzone").addEventListener("drop", (event) => loadFile(event.dataTransfer.files[0]));
 window.addEventListener("dragover", (event) => event.preventDefault());
 window.addEventListener("drop", (event) => event.preventDefault());
-$("gridSize").addEventListener("input", () => { syncGridControls(); scheduleConversion(); });
-$("gridRows").addEventListener("input", scheduleConversion);
+$("gridSize").addEventListener("input", () => {
+  syncGridControls();
+  syncLinkedPrintDimensions("height");
+  scheduleConversion();
+});
+$("gridRows").addEventListener("input", () => {
+  syncLinkedPrintDimensions("width");
+  scheduleConversion();
+});
 $("lockGridSize").addEventListener("click", () => {
   finishStroke();
   const previous = currentGridLayout();
@@ -755,6 +771,7 @@ $("lockGridSize").addEventListener("click", () => {
   if (!state.gridLinked) $("gridRows").value = previous.rows;
   syncGridControls();
   const next = currentGridLayout();
+  if (previous.rows !== next.rows) syncLinkedPrintDimensions();
   if (state.busy || state.mosaicDirty || previous.rows !== next.rows) scheduleConversion();
   else {
     for (const result of [state.result, state.preview]) if (result) result.grid_rows = state.gridLinked ? null : next.rows;
@@ -763,7 +780,9 @@ $("lockGridSize").addEventListener("click", () => {
 });
 for (const [id, shape] of [["squareGrid", "square"], ["hexagonGrid", "hexagon"]]) $(id).addEventListener("click", () => {
   if (state.shape === shape) return;
-  finishStroke(); state.shape = shape; syncGridButtons(); syncGridControls(); scheduleConversion();
+  finishStroke(); state.shape = shape; syncGridButtons(); syncGridControls();
+  syncLinkedPrintDimensions();
+  scheduleConversion();
 });
 for (const name of adjustmentNames) {
   const slider = $(name), field = $(name + "Value");
@@ -818,11 +837,11 @@ $("lockSize").addEventListener("click", () => {
   state.linked = !state.linked;
   $("lockSize").setAttribute("aria-pressed", String(state.linked));
   $("lockSize").textContent = state.linked ? "↔ Linked" : "↔ Unlinked";
-  if (state.linked) $("heightCm").value = $("widthCm").value;
+  syncLinkedPrintDimensions();
   updateDimensions();
 });
-for (const [id, other] of [["widthCm", "heightCm"], ["heightCm", "widthCm"]]) {
-  $(id).addEventListener("input", () => { if (state.linked) $(other).value = $(id).value; updateDimensions(); });
+for (const [id, anchor] of [["widthCm", "width"], ["heightCm", "height"]]) {
+  $(id).addEventListener("input", () => { syncLinkedPrintDimensions(anchor); updateDimensions(); });
   $(id).addEventListener("change", () => { if (!validDimensions()) $(id).reportValidity(); });
 }
 $("exportButton").addEventListener("click", () => {

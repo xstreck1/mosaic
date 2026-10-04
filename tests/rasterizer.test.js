@@ -207,6 +207,52 @@ test("independent grid axes sample every rectangular tile and export the same la
   assert.match(svg, /<rect x="4" y="7"/);
 });
 
+test("linked print dimensions follow independent grid axes and manual sizing", () => {
+  const grid = (columns, rows) => ({ columns, rows, grid_shape: "square" });
+  assert.deepEqual(R.linkedPrintDimensions(grid(42, 21), 11, 11, "height"), { width: 22, height: 11 });
+  assert.deepEqual(R.linkedPrintDimensions(grid(21, 42), 11, 11, "width"), { width: 11, height: 22 });
+  assert.deepEqual(R.linkedPrintDimensions(grid(42, 42), 11, 11, "height"), { width: 11, height: 11 });
+  assert.deepEqual(R.linkedPrintDimensions(grid(21, 42), 22, 11, "width"), { width: 22, height: 44 });
+  assert.deepEqual(R.linkedPrintDimensions(grid(21, 42), 11, 30, "height"), { width: 15, height: 30 });
+  // Re-linking a square grid keeps width and returns the print to a square.
+  assert.deepEqual(R.linkedPrintDimensions(grid(42, 42), 22, 11), { width: 22, height: 22 });
+  // Editing width keeps that value despite rounding the dependent height.
+  assert.deepEqual(R.linkedPrintDimensions(grid(21, 22), 11, 11), { width: 11, height: 11.5 });
+});
+
+test("linked hexagonal print dimensions preserve regular hexagon geometry", () => {
+  for (const [columns, rows] of [[21, 24], [42, 24], [21, 48], [5, 74], [64, 5]]) {
+    const grid = { columns, rows, grid_shape: "hexagon" };
+    for (const anchor of ["width", "height"]) {
+      const size = R.linkedPrintDimensions(grid, 11, 11, anchor);
+      const points = R.cellPolygon(grid, 0).map(([x, y]) => [x * size.width, y * size.height]);
+      const edges = points.map(([x, y], i) => {
+        const next = points[(i + 1) % points.length];
+        return Math.hypot(x - next[0], y - next[1]);
+      });
+      // All six sides are equal within the print fields' 0.1 cm precision.
+      assert.ok(Math.max(...edges) - Math.min(...edges) < .03, `${columns} × ${rows}, ${anchor}`);
+    }
+  }
+});
+
+test("linked print sizing stays inside print limits for extreme grids", () => {
+  for (const grid_shape of ["square", "hexagon"]) for (const columns of [5, 64])
+    for (const rows of [5, grid_shape === "hexagon" ? 74 : 64])
+      for (const anchor of ["width", "height"]) for (const value of [1, 11, 50]) {
+        const size = R.linkedPrintDimensions({ grid_shape, columns, rows }, value, value, anchor);
+        for (const dimension of Object.values(size)) {
+          assert.ok(dimension >= 1 && dimension <= 50);
+          assert.ok(Math.abs(dimension * 10 - Math.round(dimension * 10)) < 1e-9);
+        }
+      }
+  assert.deepEqual(R.linkedPrintDimensions({ grid_shape: "square", columns: 64, rows: 5 }, 11, 11, "height"),
+    { width: 50, height: 3.9 });
+  assert.throws(() => R.linkedPrintDimensions({ grid_shape: "square", columns: 21, rows: 21 }, "", 11));
+  assert.throws(() => R.linkedPrintDimensions({ grid_shape: "square", columns: 21, rows: 21 }, 11, 51));
+  assert.throws(() => R.linkedPrintDimensions({ grid_shape: "square", columns: 21, rows: 21 }, 11, 11, "bad"));
+});
+
 test("invalid settings, crop, dimensions and pixel data are rejected", () => {
   const data = pixels(5, 5, () => [0, 0, 0, 255]);
   for (const options of [{ grid: 4 }, { grid: 21.5 }, { grid: "nan" }, { gridRows: 4 }, { gridRows: 65 }, { gridRows: 7.5 }, { gridRows: "nan" }, { shape: "hexagon", gridRows: 75 }, { palette: "bad" }, { fit: "bad" }, { mirror: "false" },
