@@ -518,7 +518,8 @@
     const rows = number(payload.rows, "Rows", circle ? 3 : 5, circle ? 33 : grid_shape === "hexagon" ? 75 : 64, true);
     if (circle && (columns !== rows || columns % 2 !== 1)) throw new Error("Invalid circle ring layout.");
     const cell_count = circle ? 1 + 3 * (columns - 1) / 2 * ((columns - 1) / 2 + 1) : columns * rows;
-    const width_cm = number(payload.width_cm ?? (circle ? 7.5 : 11), "Width", 1, 50), height_cm = number(payload.height_cm ?? (circle ? 7.5 : 11), "Height", 1, 50);
+    const defaultSize = circle ? 7.5 : grid_shape === "square" ? 10.8 : 11;
+    const width_cm = number(payload.width_cm ?? defaultSize, "Width", 1, 50), height_cm = number(payload.height_cm ?? defaultSize, "Height", 1, 50);
     if (!Array.isArray(payload.palette) || payload.palette.length < 1 || payload.palette.length > 64 || payload.palette.some(c => typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c))) throw new Error("Choose a valid palette with 1 to 64 colors.");
     if (!Array.isArray(payload.cells) || payload.cells.length !== cell_count || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
     if (payload.alphas !== undefined && (!Array.isArray(payload.alphas) || payload.alphas.length !== payload.cells.length ||

@@ -275,7 +275,7 @@ test("PNG paints opaque integer rectangles using at most the palette colors", ()
   const result = solid([255, 255, 255, 255]), calls = [], context = { fillStyle: "", fillRect(...args) { calls.push({ color: this.fillStyle, args }); } };
   const canvas = { getContext: () => context };
   R.paintExport(canvas, { ...result, show_grid: true });
-  assert.deepEqual([canvas.width, canvas.height], [1299, 1299]);
+  assert.deepEqual([canvas.width, canvas.height], [1276, 1276]);
   assert.equal(calls.length, 25 + 8);
   calls.forEach(call => { assert.ok(result.palette.includes(call.color)); assert.ok(call.args.every(Number.isInteger)); });
   assert.deepEqual(R.pngDimensions({ ...result, width_cm: 5, height_cm: 10 }), [591, 1181]);
