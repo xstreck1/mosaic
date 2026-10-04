@@ -1,6 +1,6 @@
 # Mosaic — Image mosaic studio
 
-A browser-only JavaScript app that converts images into a grid of flat-color squares or hexagons. Python only serves the static files. The defaults are **21 × 21 squares**, **11 × 11 cm**, and **From image**, which extracts a 20-color palette.
+A browser-only JavaScript app that converts images into flat-color squares, hexagons, or concentric circular dots. Python only serves the static files. The defaults are **21 × 21 squares**, **11 × 11 cm**, and **From image**, which extracts a 20-color palette.
 
 ## Run
 
@@ -35,6 +35,7 @@ During deployment, JavaScript, CSS, and gallery PNG URLs (including the worker a
 - Drop an image onto the upload area or browse for a file. Successfully decoded uploads are added to the six-column gallery below the upload area and selected automatically. Click any thumbnail to select it; clicking the current selection preserves edits. Switching images clears the crop and painted edits while retaining palette, adjustment, grid shape, grid size, and print settings. Uploaded gallery pictures stay available in the current tab until reload; export mosaics to save your work.
 - Six built-in pictures have different styles and palettes: **Sunset study** (flat landscape illustration), **Bright cat** (vivid pop art), **Sci-fi robot** (a bright cyan-and-ivory cartoon with amber lights), **Coastal boat** (natural photography in marine blue, wood brown, and ivory), **Earth** (a flat blue-and-green globe), and **Strawberry** (a red botanical illustration). Style names appear in thumbnail tooltips and source details. All six default source images are 640 × 640 pixels. Cat, robot, Earth and strawberry have transparent backgrounds. The sunset is generated locally on canvas; five generated PNG assets used by the gallery are bundled in `static/samples/`, with the original prompts in `generation-prompts.md`. All samples work offline once served locally and stay available alongside uploads. The restore button selects the sunset again.
 - Choose **Squares** or **Hexagons** in section 02, with grid sizes from 5 to 64. Squares use an N × N grid. Hexagons use staggered honeycomb rows and sample the actual area of each tile. All hexagons are complete, including at the edges; the surrounding transparent margins form a scalloped border and cannot be painted. The preview workspace shows through these gaps, and PNG and SVG exports preserve their transparency. The preview shows the actual tile count. The shape applies to painting, undo/redo, mirroring, grid lines, printing, SVG and PNG exports. Switching shape rebuilds the mosaic and clears painted edits.
+- Choose **Circles** for a round pegboard pattern. Its default is **eight concentric rings plus a center dot (217 dots)** at **7.5 × 7.5 cm**. Each ring has six more dots than the previous ring. The **Rings** slider ranges from 1 to 16; grid axes stay linked. Dot colors are sampled from their circular areas, and gaps cannot be picked or painted. Gaps are transparent with **Preserve transparency** enabled and white when disabled, in the preview, PNG, SVG and print. Grid lines outline individual dots. Brush, color picker, bucket fill, undo/redo and mirroring also work with this layout; bucket fill connects nearby dots on the same and neighboring rings. Switching back to Squares or Hexagons restores the previous grid and print settings.
 - Images automatically fit inside the mosaic with transparent padding where needed, or white padding when Preserve transparency is off. Use **Crop image** to choose which part of the source to include.
 - Grid size defaults to **Linked**, with one slider: square rows follow columns, and hexagon rows follow the existing honeycomb proportions. Click the grid's **Linked** button to expose independent **Columns** and **Rows** sliders. Unlinking preserves the current layout and painted edits; linking again makes the rows follow columns. Columns range from 5 to 64; rows range from 5 to 64 for squares or 74 for hexagons. Grid linking is separate from print-dimension linking. Changing either axis rebuilds tiles; in Original view, tile calculation waits until Mosaic is selected.
 - Toggle **Mirror horizontally** in section 02 to flip the mosaic left to right. Printing and exports use the mirrored layout. The original comparison and crop editor keep the source orientation. Mirroring persists through cropping and other settings, and preserves painted edits and undo/redo history. Undo and redo follow the painted tiles to their mirrored positions.
@@ -68,7 +69,8 @@ Node.js is only needed to run the algorithm and editing tests, not to use the ap
 node --check static/app.js
 node --check static/rasterizer.js
 node --check static/raster-worker.js
-node --test tests/rasterizer.test.js tests/raster-worker.test.js tests/browser-rasterizer.test.js tests/editor.test.js tests/crop.test.js
+$testFiles = (Get-ChildItem tests -Filter *.test.js).FullName
+node --test $testFiles
 python -m unittest discover -s tests -v
 ```
 

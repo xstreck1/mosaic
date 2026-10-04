@@ -17,7 +17,7 @@ function setup(cells, shape = "square") {
     const node = {
       value: "11", checked: false, children: [], clientWidth: 400, clientHeight: 400,
       style: { setProperty() {} },
-      classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } },
+      classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); }, contains(name) { return classes.has(name); } },
       setAttribute(name, value) { attributes.set(name, value); },
       getAttribute(name) { return attributes.get(name); },
       addEventListener(name, handler) {
@@ -30,7 +30,7 @@ function setup(cells, shape = "square") {
       checkValidity: () => true, focus() {}, hasPointerCapture: () => false,
       setPointerCapture() { throw new Error("Picker and fill must not start a drag stroke."); },
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
-      getContext: () => ({ fillRect() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}, strokeRect() {} })
+      getContext: () => ({ fillRect() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, ellipse() {}, fill() {}, stroke() {}, strokeRect() {} })
     };
     elements.set(id, node);
     return node;
@@ -116,4 +116,31 @@ test("transparent swatch erases with bucket fill and eyedropper can pick the era
   app.element("undoButton").emit("click");
   assert.ok(app.state.result.alphas.every(alpha => alpha === 255));
   assert.equal(app.state.result.used_colors, 1);
+});
+
+test("circle selection uses eight rings and 7.5 cm and restores rectangular settings on exit", () => {
+  const app = setup(new Array(9).fill(0));
+  app.element("gridSize").value = "21";
+  app.element("widthCm").value = app.element("heightCm").value = "11";
+  vm.runInContext("scheduleConversion = () => { updateDimensions(); };", app.context);
+  app.element("circleGrid").emit("click");
+  assert.equal(app.state.shape, "circle");
+  assert.equal(Number(app.element("gridSize").value), 8);
+  assert.equal(Number(app.element("widthCm").value), 7.5);
+  assert.equal(Number(app.element("heightCm").value), 7.5);
+  assert.equal(app.element("gridLabel").textContent, "8 rings");
+  assert.equal(app.element("squareCount").textContent, "217");
+  assert.equal(app.element("lockGridSize").disabled, true);
+  const layout = R.gridLayout(8, "circle");
+  app.state.result = { ...layout, grid_shape: "circle", cells: new Array(217).fill(0), alphas: new Array(217).fill(255),
+    palette: ["#FF0000"], transparency: true, used_colors: 1 };
+  vm.runInContext("drawPreview()", app.context);
+  assert.equal(app.element("canvasWorkspace").classList.contains("transparency-mode"), true);
+  app.state.result.transparency = false;
+  vm.runInContext("drawPreview()", app.context);
+  assert.equal(app.element("canvasWorkspace").classList.contains("transparency-mode"), false);
+  app.element("squareGrid").emit("click");
+  assert.equal(app.element("gridSize").value, "21");
+  assert.equal(Number(app.element("widthCm").value), 11);
+  assert.equal(Number(app.element("heightCm").value), 11);
 });

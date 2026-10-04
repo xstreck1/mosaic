@@ -180,9 +180,10 @@
   function imageSettings(width, height, options = {}) {
     number(width, "Image width", 1, 25000000, true); number(height, "Image height", 1, 25000000, true);
     if (width * height > 25000000) throw new Error("The image must be no larger than 25 megapixels.");
-    const size = number(options.grid ?? 21, "Grid size", 5, 64, true), mode = options.palette === "studio" ? "vibrant" : options.palette ?? "vibrant", fit = options.fit ?? "cover", mirror = options.mirror ?? false;
     const grid_shape = options.shape ?? "square", transparency = options.transparency ?? true;
-    if (!["square", "hexagon"].includes(grid_shape)) throw new Error("Choose a valid grid shape.");
+    if (!["square", "hexagon", "circle"].includes(grid_shape)) throw new Error("Choose a valid grid shape.");
+    const size = number(options.grid ?? (grid_shape === "circle" ? 8 : 21), "Grid size", grid_shape === "circle" ? 1 : 5, grid_shape === "circle" ? 16 : 64, true);
+    const mode = options.palette === "studio" ? "vibrant" : options.palette ?? "vibrant", fit = options.fit ?? "cover", mirror = options.mirror ?? false;
     if (typeof mirror !== "boolean") throw new Error("Choose a valid mirror setting.");
     if (typeof transparency !== "boolean") throw new Error("Choose a valid transparency setting.");
     if (!Object.hasOwn(PRESETS, mode) || !["cover", "contain"].includes(fit)) throw new Error("Choose a valid palette and framing mode.");
@@ -195,6 +196,11 @@
   }
 
   function gridLayout(size, shape = "square", rowCount = null) {
+    if (shape === "circle") {
+      const rings = number(size, "Circle rings", 1, 16, true);
+      if (rowCount != null) throw new Error("Circle rings use linked dimensions.");
+      return { columns: 2 * rings + 1, rows: 2 * rings + 1, cell_count: 1 + 3 * rings * (rings + 1) };
+    }
     const rows = rowCount == null ? shape === "hexagon" ? Math.round(size * 2 / Math.sqrt(3)) : size :
       number(rowCount, "Grid rows", 5, shape === "hexagon" ? 74 : 64, true);
     return { columns: size, rows };
@@ -202,9 +208,9 @@
 
   function linkedPrintDimensions(grid, width, height, anchor = "width") {
     const shape = grid.grid_shape;
-    if (!["square", "hexagon"].includes(shape)) throw new Error("Choose a valid grid shape.");
-    const columns = number(grid.columns, "Grid columns", 5, 64, true);
-    const rows = number(grid.rows, "Grid rows", 5, shape === "hexagon" ? 74 : 64, true);
+    if (!["square", "hexagon", "circle"].includes(shape)) throw new Error("Choose a valid grid shape.");
+    const columns = number(grid.columns, "Grid columns", shape === "circle" ? 3 : 5, 64, true);
+    const rows = number(grid.rows, "Grid rows", shape === "circle" ? 3 : 5, shape === "hexagon" ? 74 : 64, true);
     width = number(width, "Print width", 1, 50);
     height = number(height, "Print height", 1, 50);
     if (!["width", "height"].includes(anchor)) throw new Error("Choose a valid print dimension anchor.");
@@ -221,6 +227,43 @@
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
   // Fit complete hexagons inside the rectangle, leaving a scalloped transparent border.
   // Staggered rows reflect with edits.
+  function cellCircle(grid, index) {
+    const ring = index === 0 ? 0 : Math.ceil((Math.sqrt(1 + 4 * index / 3) - 1) / 2);
+    const start = ring ? 1 + 3 * (ring - 1) * ring : 0, slot = index - start;
+    const angle = ring ? slot * Math.PI / (3 * ring) - Math.PI / 2 : 0;
+    return { x: .5 + ring * Math.cos(angle) / grid.columns, y: .5 + ring * Math.sin(angle) / grid.rows,
+      rx: .4 / grid.columns, ry: .4 / grid.rows, ring, slot };
+  }
+
+  function cellMirrorIndex(grid, index) {
+    if (grid.grid_shape !== "circle") return Math.floor(index / grid.columns) * grid.columns + grid.columns - 1 - index % grid.columns;
+    const { ring, slot } = cellCircle(grid, index);
+    return ring ? 1 + 3 * (ring - 1) * ring + (6 * ring - slot) % (6 * ring) : 0;
+  }
+
+  function cellNeighbors(grid, index) {
+    if (grid.grid_shape === "circle") {
+      const point = cellCircle(grid, index), rings = (grid.columns - 1) / 2, neighbors = new Set();
+      for (let ring = Math.max(0, point.ring - 1); ring <= Math.min(rings, point.ring + 1); ring++) {
+        const count = ring ? 6 * ring : 1, start = ring ? 1 + 3 * (ring - 1) * ring : 0;
+        const nearest = point.ring ? Math.round(point.slot * count / (6 * point.ring)) : 0;
+        const slots = point.ring ? [-1, 0, 1].map(offset => (nearest + offset + count) % count) : Array.from({ length: count }, (_, i) => i);
+        for (const slot of slots) {
+          const next = start + slot, other = cellCircle(grid, next);
+          if (next !== index && Math.hypot((other.x - point.x) * grid.columns, (other.y - point.y) * grid.rows) <= 1.25) neighbors.add(next);
+        }
+      }
+      return [...neighbors];
+    }
+    const col = index % grid.columns, row = Math.floor(index / grid.columns);
+    const points = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
+    if (grid.grid_shape === "hexagon") {
+      const shift = Boolean(row % 2) !== Boolean(grid.mirror) ? 1 : -1;
+      points.push([col + shift, row - 1], [col + shift, row + 1]);
+    }
+    return points.filter(([x, y]) => x >= 0 && x < grid.columns && y >= 0 && y < grid.rows).map(([x, y]) => y * grid.columns + x);
+  }
+
   function cellPolygon(grid, index) {
     const col = index % grid.columns, row = Math.floor(index / grid.columns);
     if (grid.grid_shape !== "hexagon") return [[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]]
@@ -261,6 +304,15 @@
 
   function cellAtPoint(grid, x, y) {
     if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
+    if (grid.grid_shape === "circle") {
+      const dx = (x - .5) * grid.columns, dy = (y - .5) * grid.rows;
+      const ring = Math.round(Math.hypot(dx, dy)), rings = (grid.columns - 1) / 2;
+      if (ring > rings) return null;
+      const angle = (Math.atan2(dy, dx) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
+      const slot = ring ? Math.round(angle * 3 * ring / Math.PI) % (6 * ring) : 0;
+      const index = ring ? 1 + 3 * (ring - 1) * ring + slot : 0, circle = cellCircle(grid, index);
+      return ((x - circle.x) / circle.rx) ** 2 + ((y - circle.y) / circle.ry) ** 2 <= 1 + 1e-12 ? index : null;
+    }
     if (grid.grid_shape !== "hexagon") return Math.floor(y * grid.rows) * grid.columns + Math.floor(x * grid.columns);
     const nearRow = Math.round((y * ((grid.rows - 1) * .75 + 1) - .5) / .75);
     for (let row = Math.max(0, nearRow - 1); row <= Math.min(grid.rows - 1, nearRow + 1); row++) {
@@ -324,6 +376,33 @@
     return opacity ? [red, green, blue].map(v => clamp(v / opacity)).concat(opacity / area >= .5 - 1e-12 ? 255 : 0) : [255, 255, 255, 0];
   }
 
+  function circleSamples(data, width, bounds, side, originX, originY, settings, adjust) {
+    const [left, top, right, bottom] = bounds, samples = [];
+    // Integrate each circular dot separately. Vertical midpoint bands and exact
+    // horizontal overlap keep gaps and neighboring dots out of the average.
+    for (let index = 0; index < settings.cell_count; index++) {
+      const circle = cellCircle(settings, index), cx = originX + circle.x * side, cy = originY + circle.y * side;
+      const radius = circle.rx * side, bands = Math.max(8, Math.ceil(radius * 4));
+      const step = 2 * radius / bands;
+      let area = 0, opacity = 0, red = 0, green = 0, blue = 0;
+      for (let band = 0; band < bands; band++) {
+        const y = cy - radius + (band + .5) * step, py = Math.floor(y);
+        const half = Math.sqrt(Math.max(0, radius * radius - (y - cy) ** 2));
+        area += half * 2 * step;
+        if (py < top || py >= bottom) continue;
+        for (let x = Math.max(left, Math.floor(cx - half)); x < Math.min(right, Math.ceil(cx + half)); x++) {
+          const i = (py * width + x) * 4, alpha = data[i + 3] / 255;
+          if (!alpha) continue;
+          const weight = (Math.min(x + 1, cx + half) - Math.max(x, cx - half)) * step * alpha;
+          const color = adjust(data[i], data[i + 1], data[i + 2]);
+          red += (color >> 16) * weight; green += ((color >> 8) & 255) * weight; blue += (color & 255) * weight; opacity += weight;
+        }
+      }
+      samples.push(sampleColor(red, green, blue, opacity, area, settings.transparency));
+    }
+    return samples;
+  }
+
   function cropBounds(width, height, crop) {
     if (crop == null) return [0, 0, width, height];
     if (!Array.isArray(crop) || crop.length !== 4) throw new Error("Choose a valid crop rectangle.");
@@ -376,7 +455,8 @@
     // not tint the foreground. Outside a contained image has zero coverage.
     const originX = left + (cw - side) / 2, originY = top + (ch - side) / 2, cellWidth = side / columns, cellHeight = side / rows;
     const adjust = colorAdjuster(adjustments);
-    const samples = settings.grid_shape === "hexagon" ? hexSamples(data, width, bounds, side, originX, originY, settings, adjust) : [];
+    const samples = settings.grid_shape === "hexagon" ? hexSamples(data, width, bounds, side, originX, originY, settings, adjust) :
+      settings.grid_shape === "circle" ? circleSamples(data, width, bounds, side, originX, originY, settings, adjust) : [];
     for (let row = 0; settings.grid_shape === "square" && row < rows; row++) {
       for (let col = 0; col < columns; col++) {
         const x0 = originX + col * cellWidth, x1 = x0 + cellWidth, y0 = originY + row * cellHeight, y1 = y0 + cellHeight;
@@ -401,8 +481,8 @@
     else if (visible.length) ({ palette, cells: mapped, names } = fixedPalette(visible, PRESETS[mode], limit));
     let cursor = 0, cells = samples.map(color => color[3] ? mapped[cursor++] : 0), alphas = samples.map(color => color[3]);
     if (mirror) {
-      const reverseRows = values => values.flatMap((_, i) => i % columns === 0 ? values.slice(i, i + columns).reverse() : []);
-      cells = reverseRows(cells); alphas = reverseRows(alphas);
+      const mirrored = values => values.map((_, i) => values[cellMirrorIndex(settings, i)]);
+      cells = mirrored(cells); alphas = mirrored(alphas);
     }
     const counts = Array(palette.length).fill(0); cells.forEach((color, i) => { if (alphas[i]) counts[color]++; });
     return { ...settings, cells, alphas, palette, counts,
@@ -416,20 +496,34 @@
   function validateExport(payload) {
     if (!payload || typeof payload !== "object") throw new Error("Invalid export data.");
     const grid_shape = payload.grid_shape ?? "square", mirror = payload.mirror ?? false;
-    if (!["square", "hexagon"].includes(grid_shape) || typeof mirror !== "boolean") throw new Error("Invalid grid shape or mirror setting.");
-    const columns = number(payload.columns, "Columns", 5, grid_shape === "hexagon" ? 65 : 64, true), rows = number(payload.rows, "Rows", 5, grid_shape === "hexagon" ? 75 : 64, true);
-    const width_cm = number(payload.width_cm ?? 11, "Width", 1, 50), height_cm = number(payload.height_cm ?? 11, "Height", 1, 50);
+    if (!["square", "hexagon", "circle"].includes(grid_shape) || typeof mirror !== "boolean") throw new Error("Invalid grid shape or mirror setting.");
+    const circle = grid_shape === "circle";
+    const columns = number(payload.columns, "Columns", circle ? 3 : 5, circle ? 33 : grid_shape === "hexagon" ? 65 : 64, true);
+    const rows = number(payload.rows, "Rows", circle ? 3 : 5, circle ? 33 : grid_shape === "hexagon" ? 75 : 64, true);
+    if (circle && (columns !== rows || columns % 2 !== 1)) throw new Error("Invalid circle ring layout.");
+    const cell_count = circle ? 1 + 3 * (columns - 1) / 2 * ((columns - 1) / 2 + 1) : columns * rows;
+    const width_cm = number(payload.width_cm ?? (circle ? 7.5 : 11), "Width", 1, 50), height_cm = number(payload.height_cm ?? (circle ? 7.5 : 11), "Height", 1, 50);
     if (!Array.isArray(payload.palette) || payload.palette.length < 1 || payload.palette.length > 64 || payload.palette.some(c => typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c))) throw new Error("Choose a valid palette with 1 to 64 colors.");
-    if (!Array.isArray(payload.cells) || payload.cells.length !== columns * rows || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
+    if (!Array.isArray(payload.cells) || payload.cells.length !== cell_count || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
     if (payload.alphas !== undefined && (!Array.isArray(payload.alphas) || payload.alphas.length !== payload.cells.length ||
       payload.alphas.some(alpha => alpha !== 0 && alpha !== 255))) throw new Error("Tile opacity must be solid or clear.");
     if (payload.show_grid !== undefined && typeof payload.show_grid !== "boolean") throw new Error("Invalid grid option.");
-    return { ...payload, columns, rows, grid_shape, mirror, width_cm, height_cm, show_grid: payload.show_grid ?? false };
+    if (payload.transparency !== undefined && typeof payload.transparency !== "boolean") throw new Error("Invalid transparency setting.");
+    return { ...payload, columns, rows, grid_shape, mirror, width_cm, height_cm, transparency: payload.transparency ?? true, show_grid: payload.show_grid ?? false };
   }
 
   function exportSVG(payload) {
     const p = validateExport(payload), { columns, rows, width_cm, height_cm, cells, palette } = p;
     const alphaAt = i => p.alphas?.[i] ?? 255;
+    if (p.grid_shape === "circle") {
+      const background = p.transparency ? "" : '<rect width="1" height="1" fill="#FFFFFF"/>';
+      const dots = cells.map((cell, i) => {
+        if (!alphaAt(i)) return "";
+        const { x, y, rx } = cellCircle(p, i);
+        return `<circle cx="${x}" cy="${y}" r="${rx}" fill="${palette[cell]}"${p.show_grid ? ` stroke="${darkest(palette)}" stroke-width="${.025 / columns}"` : ""}/>`;
+      }).join("");
+      return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 1 1" preserveAspectRatio="none"><title>Mosaic — ${cells.length} dots, ${width_cm} × ${height_cm} cm</title>${background}${dots}</svg>`;
+    }
     if (p.grid_shape === "hexagon") {
       const polygons = cells.map((cell, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>` : "").join("");
       const lines = p.show_grid ? cells.map((_, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"/>` : "").join("") : "";
@@ -466,7 +560,20 @@
     const width = canvas.width, height = canvas.height;
     const ctx = canvas.getContext("2d");
     const alphaAt = i => p.alphas?.[i] ?? 255, hasClearTiles = p.alphas?.some(alpha => alpha === 0);
-    if (hasClearTiles || p.grid_shape === "hexagon") ctx.clearRect(0, 0, width, height);
+    if (hasClearTiles || p.grid_shape !== "square") ctx.clearRect(0, 0, width, height);
+    if (p.grid_shape === "circle") {
+      ctx.globalAlpha = 1;
+      if (p.transparency === false) { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, width, height); }
+      ctx.lineWidth = Math.max(.5, Math.min(width / p.columns, height / p.rows) * .025);
+      p.cells.forEach((cell, i) => {
+        if (!alphaAt(i)) return;
+        const { x, y, rx, ry } = cellCircle(p, i);
+        ctx.beginPath(); ctx.ellipse(x * width, y * height, rx * width, ry * height, 0, 0, Math.PI * 2);
+        ctx.fillStyle = p.palette[cell]; ctx.fill();
+        if (p.show_grid) { ctx.strokeStyle = darkest(p.palette); ctx.stroke(); }
+      });
+      return canvas;
+    }
     if (p.grid_shape === "hexagon") {
       const path = points => {
         ctx.beginPath();
@@ -517,5 +624,5 @@
     return canvas;
   }
 
-  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, gridLayout, linkedPrintDimensions, cellPolygon, clippedCell, cellAtPoint, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport, paintMosaic };
+  return { PALETTE, NAMES, PRESETS, lab, cropBounds, imageSettings, gridLayout, linkedPrintDimensions, cellCircle, cellMirrorIndex, cellNeighbors, cellPolygon, clippedCell, cellAtPoint, adjustPixels, rasterizePixels, validateExport, exportSVG, pngDimensions, paintExport, paintMosaic };
 });

@@ -99,3 +99,15 @@ test("Original preserves independent grid axes without calculating tiles", async
     assert.equal(w.writes.length, 1);
   }
 });
+
+test("circle selection defers sampling in Original and calculates 217 dots in Mosaic", async () => {
+  const w = worker();
+  await w.send({ shape: "circle", previewOnly: true });
+  assert.equal(w.calls.rasterize, 0);
+  assert.equal(w.messages[0].result.cell_count, 217);
+  assert.equal(w.messages[0].result.cells, undefined);
+  await w.send({ shape: "circle" });
+  assert.equal(w.calls.rasterize, 1);
+  assert.equal(w.messages[1].result.cells.length, 217);
+  assert.ok(w.messages[1].result.alphas.every(alpha => alpha === 255));
+});

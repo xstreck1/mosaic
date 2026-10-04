@@ -42,10 +42,10 @@ class MosaicEditor {
     return true;
   }
 
-  fill(index, color, grid) {
+  fill(index, color, grid, neighborsFor = null) {
     const { columns, rows, grid_shape = "square", mirror = false } = grid;
     if (!Number.isInteger(columns) || columns < 1 || !Number.isInteger(rows) || rows < 1 ||
-        columns * rows !== this.cells.length || !["square", "hexagon"].includes(grid_shape) ||
+        (grid_shape === "circle" ? rows !== columns || columns % 2 !== 1 || 1 + 3 * (columns - 1) / 2 * ((columns - 1) / 2 + 1) !== this.cells.length || typeof neighborsFor !== "function" : columns * rows !== this.cells.length) || !["square", "hexagon", "circle"].includes(grid_shape) ||
         typeof mirror !== "boolean") throw new RangeError("Invalid fill grid.");
     if (!Number.isInteger(index) || index < 0 || index >= this.cells.length) return false;
     this.beginStroke(color);
@@ -56,6 +56,12 @@ class MosaicEditor {
       const current = pending.pop();
       if (targetAlpha ? !this.alphas[current] || this.cells[current] !== target : this.alphas[current] !== 0) continue;
       this.paint(current);
+      if (neighborsFor) {
+        for (const next of neighborsFor(grid, current)) {
+          if (Number.isInteger(next) && next >= 0 && next < this.cells.length && !visited[next]) { visited[next] = 1; pending.push(next); }
+        }
+        continue;
+      }
       const col = current % columns, row = Math.floor(current / columns);
       const neighbors = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
       if (grid_shape === "hexagon") {
@@ -102,7 +108,18 @@ class MosaicEditor {
     return true;
   }
 
-  mirrorHorizontal(columns) {
+  mirrorHorizontal(columns, indexFor = null) {
+    if (indexFor) {
+      const mapping = this.cells.map((_, i) => indexFor(i));
+      if (new Set(mapping).size !== this.cells.length || mapping.some(i => !Number.isInteger(i) || i < 0 || i >= this.cells.length)) throw new RangeError("Invalid mirror mapping.");
+      this.endStroke();
+      const cells = this.cells.slice(), alphas = this.alphas.slice();
+      mapping.forEach((source, i) => { this.cells[i] = cells[source]; this.alphas[i] = alphas[source]; });
+      const inverse = []; mapping.forEach((source, i) => { inverse[source] = i; });
+      for (const stack of [this.undoStack, this.redoStack]) for (const changes of stack)
+        for (const change of changes) change.index = inverse[change.index];
+      return;
+    }
     if (!Number.isInteger(columns) || columns < 1 || this.cells.length % columns !== 0) throw new RangeError("Invalid grid width.");
     this.endStroke();
     for (let start = 0; start < this.cells.length; start += columns) {
