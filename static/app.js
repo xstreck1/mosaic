@@ -381,8 +381,8 @@ async function convert(candidate = null, crop = undefined) {
         $("gridSize").value = state.preview.grid_size;
         state.shape = state.preview.grid_shape;
         state.gridLinked = state.preview.grid_rows == null;
-        $("gridRows").value = state.preview.rows;
         syncGridControls();
+        $("gridRows").value = state.preview.rows;
         syncGridButtons();
         state.palette = state.preview.palette_mode;
         $("colorLimit").max = MosaicRasterizer.PRESETS[state.palette].max;
