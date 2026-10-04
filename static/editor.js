@@ -37,6 +37,36 @@ class MosaicEditor {
     return true;
   }
 
+  fill(index, color, grid) {
+    const { columns, rows, grid_shape = "square", mirror = false } = grid;
+    if (!Number.isInteger(columns) || columns < 1 || !Number.isInteger(rows) || rows < 1 ||
+        columns * rows !== this.cells.length || !["square", "hexagon"].includes(grid_shape) ||
+        typeof mirror !== "boolean") throw new RangeError("Invalid fill grid.");
+    if (!Number.isInteger(index) || index < 0 || index >= this.cells.length) return false;
+    this.beginStroke(color);
+    if (this.cells[index] === color) return this.endStroke();
+    const target = this.cells[index], pending = [index], visited = new Uint8Array(this.cells.length);
+    visited[index] = 1;
+    while (pending.length) {
+      const current = pending.pop();
+      if (this.cells[current] !== target) continue;
+      this.paint(current);
+      const col = current % columns, row = Math.floor(current / columns);
+      const neighbors = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
+      if (grid_shape === "hexagon") {
+        // Reflect the staggered row offsets along with mirrored hexagon tiles.
+        const shift = Boolean(row % 2) !== mirror ? 1 : -1;
+        neighbors.push([col + shift, row - 1], [col + shift, row + 1]);
+      }
+      for (const [x, y] of neighbors) {
+        if (x < 0 || x >= columns || y < 0 || y >= rows) continue;
+        const next = y * columns + x;
+        if (!visited[next]) { visited[next] = 1; pending.push(next); }
+      }
+    }
+    return this.endStroke();
+  }
+
   endStroke() {
     if (!this.stroke) return false;
     const { color, changes } = this.stroke;

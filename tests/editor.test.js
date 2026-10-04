@@ -52,6 +52,58 @@ test("painting updates the shared mosaic data, and undo/redo restore it", () => 
   assert.deepEqual(cells, [2, 19, 4]);
 });
 
+test("bucket fill changes only the edge-connected square region as one undo step", () => {
+  const original = [0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0], cells = original.slice();
+  const editor = new MosaicEditor(cells, 3);
+  assert.equal(editor.fill(0, 2, { columns: 3, rows: 4 }), true);
+  assert.deepEqual(cells, [2, 2, 1, 1, 2, 1, 0, 1, 0, 0, 1, 0]);
+  assert.equal(editor.undoStack.length, 1);
+  editor.undo(); assert.deepEqual(cells, original);
+  editor.redo(); assert.deepEqual(cells, [2, 2, 1, 1, 2, 1, 0, 1, 0, 0, 1, 0]);
+  editor.mirrorHorizontal(3);
+  editor.undo(); assert.deepEqual(cells, [1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0]);
+});
+
+test("hexagon fill follows shared polygon edges in normal and mirrored layouts", () => {
+  const R = require("../static/rasterizer.js");
+  for (const mirror of [false, true]) {
+    const grid = { columns: 5, rows: 7, grid_shape: "hexagon", mirror };
+    const polygons = Array.from({ length: 35 }, (_, i) => R.cellPolygon(grid, i));
+    for (let start = 0; start < 35; start++) for (let other = 0; other < 35; other++) {
+      if (start === other) continue;
+      const sharedVertices = polygons[start].filter(([x, y]) => polygons[other].some(([a, b]) =>
+        Math.abs(x - a) < 1e-10 && Math.abs(y - b) < 1e-10)).length;
+      const cells = new Array(35).fill(1); cells[start] = cells[other] = 0;
+      const editor = new MosaicEditor(cells, 3);
+      editor.fill(start, 2, grid);
+      assert.equal(cells[start], 2);
+      assert.equal(cells[other], sharedVertices === 2 ? 2 : 0, `${mirror}: ${start} → ${other}`);
+    }
+  }
+});
+
+test("large bucket fills are iterative and preserve redo for no-op fills", () => {
+  const cells = new Array(64 * 74).fill(0), editor = new MosaicEditor(cells, 2);
+  const grid = { columns: 64, rows: 74, grid_shape: "hexagon" };
+  editor.fill(0, 1, grid);
+  assert.ok(cells.every(color => color === 1));
+  assert.equal(editor.undoStack.length, 1);
+  editor.undo();
+  assert.equal(editor.fill(0, 0, grid), false);
+  assert.equal(editor.canRedo, true);
+  editor.redo(); assert.ok(cells.every(color => color === 1));
+});
+
+test("invalid fill grids and clicks cannot corrupt cells or history", () => {
+  const cells = [0, 1, 0, 1], editor = new MosaicEditor(cells, 2), grid = { columns: 2, rows: 2 };
+  for (const index of [-1, 4, .5]) assert.equal(editor.fill(index, 1, grid), false);
+  for (const color of [-1, 2, .5]) assert.throws(() => editor.fill(0, color, grid), RangeError);
+  for (const patch of [{ columns: 3 }, { rows: 1 }, { grid_shape: "bad" }, { mirror: "false" }])
+    assert.throws(() => editor.fill(0, 1, { ...grid, ...patch }), RangeError);
+  assert.deepEqual(cells, [0, 1, 0, 1]);
+  assert.equal(editor.canUndo, false);
+});
+
 test("one drag is one undo step even when it revisits a square", () => {
   const cells = [1, 2, 3, 4];
   const editor = new MosaicEditor(cells, 20);

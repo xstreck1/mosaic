@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const adjustmentNames = ["vibrance", "brightness", "contrast"];
 const paletteButtons = [["imagePalette", "image"], ["studioPalette", "vibrant"], ["pastelPalette", "pastel"],
   ["neonPalette", "neon"], ["grayscalePalette", "grayscale"], ["rainbowPalette", "rainbow"], ["commodore64Palette", "commodore64"]];
+const toolButtons = [["brushTool", "brush"], ["pickerTool", "picker"], ["fillTool", "fill"]];
 const rasterizer = new BrowserRasterizer();
 
 function updateAdjustments(editingName = null) {
@@ -18,7 +19,7 @@ const state = { source: null, sourceId: 0, sourceSequence: 0, sourceName: "Sunse
   palette: "image", shape: "square", view: "mosaic", linked: true, gridLinked: true, controller: null, revision: 0,
   gallery: [], gallerySequence: 0, selectedGalleryId: null,
   timer: null, noticeTimer: null, busy: false, exporting: false, printing: false, pendingSource: null,
-  editor: null, selectedColor: 0, pointerId: null, lastCell: null,
+  editor: null, selectedColor: 0, tool: "brush", pointerId: null, lastCell: null,
   crop: null, pendingCrop: undefined, cropDraft: null, cropGesture: null };
 
 function notify(message, error = false) {
@@ -68,11 +69,19 @@ function updateEditingControls() {
   $("undoButton").disabled = unavailable || !state.editor.canUndo;
   $("redoButton").disabled = unavailable || !state.editor.canRedo;
   $("previewCanvas").classList.toggle("editable", !unavailable && state.view === "mosaic");
+  for (const [id, tool] of toolButtons) {
+    $(id).disabled = unavailable;
+    $(id).classList.toggle("active", state.tool === tool);
+    $(id).setAttribute("aria-pressed", String(state.tool === tool));
+  }
   for (const button of $("swatches").children) button.disabled = unavailable;
   const edits = state.editor?.undoStack.length || 0;
-  $("editStatus").textContent = state.mosaicDirty ? "Select Mosaic to calculate tiles, then paint." :
-    state.view === "original" ? "Choose a palette color to switch to the mosaic and paint." :
-    `${edits ? `${edits} edit${edits === 1 ? "" : "s"} · ` : ""}Pick a palette color, then click or drag to paint.`;
+  const hint = state.tool === "picker" ? "Click a tile to pick its color and return to Brush." :
+    state.tool === "fill" ? "Pick a palette color, then click to fill connected tiles of the same color." :
+    "Pick a palette color, then click or drag to paint.";
+  $("editStatus").textContent = state.mosaicDirty ? "Select Mosaic to calculate tiles, then edit." :
+    state.view === "original" ? "Choose a tool or palette color to switch to Mosaic and edit." :
+    `${edits ? `${edits} edit${edits === 1 ? "" : "s"} · ` : ""}${hint}`;
 }
 
 function updatePaletteUsage() {
@@ -121,8 +130,17 @@ function selectColor(index) {
   if (state.busy || state.mosaicDirty || !state.result) return;
   finishStroke();
   state.selectedColor = index;
+  if (state.tool === "picker") state.tool = "brush";
   if (state.view !== "mosaic") setView("mosaic");
   updatePaletteUsage();
+  updateEditingControls();
+}
+
+function selectTool(tool) {
+  if (state.busy || state.mosaicDirty || !state.editor) return;
+  finishStroke();
+  state.tool = tool;
+  if (state.view !== "mosaic") setView("mosaic");
   updateEditingControls();
 }
 
@@ -135,6 +153,7 @@ function useCustomColor() {
     const index = state.editor.addColor(color, result.palette);
     if (result.palette.length > previousSize) result.palette_names[index] = "Custom color " + result.palette[index];
     state.selectedColor = index;
+    if (state.tool === "picker") state.tool = "brush";
     renderSwatches();
     if (state.view !== "mosaic") setView("mosaic");
     refreshEdits();
@@ -709,9 +728,15 @@ $("applyCrop").addEventListener("click", () => {
 
 $("previewCanvas").addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || state.pointerId !== null || state.busy || state.mosaicDirty || !state.editor || state.view !== "mosaic") return;
-  if (!cellAtPointer(event)) return;
+  const cell = cellAtPointer(event);
+  if (!cell) return;
   event.preventDefault();
   $("previewCanvas").focus({ preventScroll: true });
+  if (state.tool === "picker") { selectColor(state.result.cells[cell.index]); return; }
+  if (state.tool === "fill") {
+    if (state.editor.fill(cell.index, state.selectedColor, state.result)) refreshEdits();
+    return;
+  }
   state.editor.beginStroke(state.selectedColor);
   state.pointerId = event.pointerId;
   $("previewCanvas").setPointerCapture(event.pointerId);
@@ -726,6 +751,7 @@ for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
 window.addEventListener("blur", finishStroke);
 $("undoButton").addEventListener("click", () => historyAction("undo"));
 $("redoButton").addEventListener("click", () => historyAction("redo"));
+for (const [id, tool] of toolButtons) $(id).addEventListener("click", () => selectTool(tool));
 $("customColor").addEventListener("input", () => {
   $("customColorHex").value = $("customColor").value.toUpperCase();
   updateEditingControls();
