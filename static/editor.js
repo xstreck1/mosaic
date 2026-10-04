@@ -2,8 +2,9 @@
 
 // Edits mutate the mosaic's cell array so preview, export, and print share one result.
 class MosaicEditor {
-  constructor(cells, paletteSize, historyLimit = 200) {
+  constructor(cells, paletteSize, historyLimit = 200, alphas = null) {
     this.cells = cells;
+    this.alphas = alphas ?? new Array(cells.length).fill(255);
     this.paletteSize = paletteSize;
     this.historyLimit = historyLimit;
     this.undoStack = [];
@@ -12,7 +13,7 @@ class MosaicEditor {
   }
 
   beginStroke(color) {
-    if (!Number.isInteger(color) || color < 0 || color >= this.paletteSize) throw new RangeError("Invalid palette color.");
+    if (!Number.isInteger(color) || color < -1 || color >= this.paletteSize) throw new RangeError("Invalid palette color.");
     this.endStroke();
     this.stroke = { color, changes: new Map() };
   }
@@ -31,9 +32,11 @@ class MosaicEditor {
 
   paint(index) {
     if (!this.stroke || !Number.isInteger(index) || index < 0 || index >= this.cells.length) return false;
-    if (this.cells[index] === this.stroke.color) return false;
-    if (!this.stroke.changes.has(index)) this.stroke.changes.set(index, this.cells[index]);
-    this.cells[index] = this.stroke.color;
+    const alpha = this.stroke.color === -1 ? 0 : 255;
+    if (this.alphas[index] === alpha && (!alpha || this.cells[index] === this.stroke.color)) return false;
+    if (!this.stroke.changes.has(index)) this.stroke.changes.set(index, { color: this.cells[index], alpha: this.alphas[index] });
+    if (alpha) this.cells[index] = this.stroke.color;
+    this.alphas[index] = alpha;
     return true;
   }
 
@@ -44,12 +47,12 @@ class MosaicEditor {
         typeof mirror !== "boolean") throw new RangeError("Invalid fill grid.");
     if (!Number.isInteger(index) || index < 0 || index >= this.cells.length) return false;
     this.beginStroke(color);
-    if (this.cells[index] === color) return this.endStroke();
-    const target = this.cells[index], pending = [index], visited = new Uint8Array(this.cells.length);
+    const target = this.cells[index], targetAlpha = this.alphas[index], pending = [index], visited = new Uint8Array(this.cells.length);
+    if (!targetAlpha && color === -1) return this.endStroke();
     visited[index] = 1;
     while (pending.length) {
       const current = pending.pop();
-      if (this.cells[current] !== target) continue;
+      if (targetAlpha ? !this.alphas[current] || this.cells[current] !== target : this.alphas[current] !== 0) continue;
       this.paint(current);
       const col = current % columns, row = Math.floor(current / columns);
       const neighbors = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
@@ -69,10 +72,11 @@ class MosaicEditor {
 
   endStroke() {
     if (!this.stroke) return false;
-    const { color, changes } = this.stroke;
+    const { changes } = this.stroke;
     this.stroke = null;
     if (!changes.size) return false;
-    this.undoStack.push([...changes].map(([index, before]) => ({ index, before, after: color })));
+    this.undoStack.push([...changes].map(([index, before]) => ({ index, before: before.color, beforeAlpha: before.alpha,
+      after: this.cells[index], afterAlpha: this.alphas[index] })));
     if (this.undoStack.length > this.historyLimit) this.undoStack.shift();
     this.redoStack = [];
     return true;
@@ -82,7 +86,7 @@ class MosaicEditor {
     this.endStroke();
     const changes = this.undoStack.pop();
     if (!changes) return false;
-    changes.forEach(({ index, before }) => { this.cells[index] = before; });
+    changes.forEach(({ index, before, beforeAlpha }) => { this.cells[index] = before; this.alphas[index] = beforeAlpha; });
     this.redoStack.push(changes);
     return true;
   }
@@ -91,7 +95,7 @@ class MosaicEditor {
     this.endStroke();
     const changes = this.redoStack.pop();
     if (!changes) return false;
-    changes.forEach(({ index, after }) => { this.cells[index] = after; });
+    changes.forEach(({ index, after, afterAlpha }) => { this.cells[index] = after; this.alphas[index] = afterAlpha; });
     this.undoStack.push(changes);
     return true;
   }
@@ -103,6 +107,7 @@ class MosaicEditor {
       for (let x = 0; x < Math.floor(columns / 2); x++) {
         const left = start + x, right = start + columns - 1 - x;
         [this.cells[left], this.cells[right]] = [this.cells[right], this.cells[left]];
+        [this.alphas[left], this.alphas[right]] = [this.alphas[right], this.alphas[left]];
       }
     }
     // Move undo/redo coordinates with their painted squares.

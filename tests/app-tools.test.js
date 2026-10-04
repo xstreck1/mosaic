@@ -30,7 +30,7 @@ function setup(cells, shape = "square") {
       checkValidity: () => true, focus() {}, hasPointerCapture: () => false,
       setPointerCapture() { throw new Error("Picker and fill must not start a drag stroke."); },
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
-      getContext: () => ({ fillRect() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {} })
+      getContext: () => ({ fillRect() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}, strokeRect() {} })
     };
     elements.set(id, node);
     return node;
@@ -47,7 +47,8 @@ function setup(cells, shape = "square") {
   state.result = { columns: 3, rows: 3, cells, grid_shape: shape, mirror: false,
     palette: ["#FFFFFF", "#000000", "#FF0000"], palette_names: ["White", "Black", "Red"] };
   state.preview = state.result;
-  state.editor = new MosaicEditor(cells, 3);
+  state.result.alphas = new Array(cells.length).fill(255);
+  state.editor = new MosaicEditor(cells, 3, 200, state.result.alphas);
   state.mosaicDirty = false;
   state.shape = shape;
   vm.runInContext("refreshEdits()", context);
@@ -100,4 +101,19 @@ test("tools ignore hexagon margins and unavailable mosaics", () => {
   app.state.selectedColor = 2;
   app.clickTile(50, 50);
   assert.ok(cells.every(color => color === 0));
+});
+
+test("transparent swatch erases with bucket fill and eyedropper can pick the erased region", () => {
+  const app = setup(new Array(9).fill(0));
+  app.element("fillTool").emit("click");
+  app.element("transparentColor").emit("click");
+  app.clickTile(50, 50);
+  assert.ok(app.state.result.alphas.every(alpha => alpha === 0));
+  assert.equal(app.state.result.used_colors, 0);
+  app.element("pickerTool").emit("click"); app.clickTile(50, 50);
+  assert.equal(app.state.selectedColor, -1);
+  assert.equal(app.element("brushName").textContent, "Transparent");
+  app.element("undoButton").emit("click");
+  assert.ok(app.state.result.alphas.every(alpha => alpha === 255));
+  assert.equal(app.state.result.used_colors, 1);
 });

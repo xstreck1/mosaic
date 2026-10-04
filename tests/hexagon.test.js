@@ -38,7 +38,8 @@ test("complete hexagonal sampling preserves solid colors and transparent backgro
     const result = R.rasterizePixels(pixels(width, height, () => color), width, height, { grid: 5, shape: "hexagon", palette: "image", colors: 64 });
     assert.equal(result.cells.length, 30);
     assert.deepEqual(result.palette, [color[3] ? "#" + color.slice(0, 3).map(c => c.toString(16).padStart(2, "0")).join("").toUpperCase() : "#FFFFFF"]);
-    assert.equal(result.counts[0], 30);
+    assert.equal(result.counts[0], color[3] ? 30 : 0);
+    assert.ok(result.alphas.every(alpha => alpha === color[3]));
   }
 });
 
@@ -100,7 +101,7 @@ test("hexagon colors average actual polygon coverage rather than bounding rectan
 
 test("hexagon crops, contained white margins and color adjustments use the selected source pixels", () => {
   const data = pixels(40, 20, (x, y) => x < 20 ? [255, 0, 0, 255] : [30, y * 8, 220, x % 3 ? 255 : 128]);
-  const options = { grid: 5, shape: "hexagon", palette: "image", colors: 64, fit: "contain", crop: [.5, 0, 1, .5], vibrance: 50, contrast: -20 };
+  const options = { grid: 5, shape: "hexagon", palette: "image", colors: 64, fit: "contain", transparency: false, crop: [.5, 0, 1, .5], vibrance: 50, contrast: -20 };
   const direct = R.rasterizePixels(data, 40, 20, options);
   const adjusted = R.rasterizePixels(R.adjustPixels(data, options), 40, 20, { ...options, vibrance: 0, contrast: 0 });
   assert.deepEqual(direct.cells, adjusted.cells);

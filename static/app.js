@@ -66,6 +66,9 @@ function updateEditingControls() {
   $("customColor").disabled = unavailable;
   $("customColorHex").disabled = unavailable;
   $("useCustomColor").disabled = unavailable || !$("customColorHex").value || !$("customColorHex").checkValidity();
+  $("transparentColor").disabled = unavailable;
+  $("transparentColor").setAttribute("aria-pressed", String(state.selectedColor === -1));
+  $("transparentColor").classList.toggle("active", state.selectedColor === -1);
   $("undoButton").disabled = unavailable || !state.editor.canUndo;
   $("redoButton").disabled = unavailable || !state.editor.canRedo;
   $("previewCanvas").classList.toggle("editable", !unavailable && state.view === "mosaic");
@@ -100,17 +103,21 @@ function updatePaletteUsage() {
     button.classList.toggle("selected", selected);
     button.classList.toggle("unused", result.counts[i] === 0);
   });
-  $("brushSwatch").style.backgroundColor = result.palette[state.selectedColor];
-  $("brushName").textContent = result.palette_names[state.selectedColor] || result.palette[state.selectedColor];
-  $("customColor").value = result.palette[state.selectedColor];
-  $("customColorHex").value = result.palette[state.selectedColor].toUpperCase();
+  const transparent = state.selectedColor === -1;
+  $("brushSwatch").classList.toggle("transparency-swatch", transparent);
+  $("brushSwatch").style.backgroundColor = transparent ? "transparent" : result.palette[state.selectedColor];
+  $("brushName").textContent = transparent ? "Transparent" : result.palette_names[state.selectedColor] || result.palette[state.selectedColor];
+  if (!transparent) {
+    $("customColor").value = result.palette[state.selectedColor];
+    $("customColorHex").value = result.palette[state.selectedColor].toUpperCase();
+  }
 }
 
 function refreshEdits() {
   const result = state.result;
   result.counts = new Array(result.palette.length).fill(0);
-  result.cells.forEach((color) => result.counts[color]++);
-  result.used_colors = new Set(result.cells.map((color) => result.palette[color])).size;
+  result.cells.forEach((color, i) => { if (result.alphas?.[i] !== 0) result.counts[color]++; });
+  result.used_colors = new Set(result.cells.filter((_, i) => result.alphas?.[i] !== 0).map((color) => result.palette[color])).size;
   updatePaletteUsage();
   updateEditingControls();
   drawPreview();
@@ -207,35 +214,14 @@ function paintToPointer(event) {
 
 function mosaicPayload() {
   return { columns: state.result.columns, rows: state.result.rows, cells: state.result.cells,
+    alphas: state.result.alphas,
     grid_shape: state.result.grid_shape, mirror: state.result.mirror,
     palette: state.result.palette, width_cm: Number($("widthCm").value), height_cm: Number($("heightCm").value), show_grid: $("gridLines").checked };
 }
 
 function preparePrint() {
-  const payload = mosaicPayload();
-  if (payload.grid_shape === "hexagon") {
-    const documentSVG = new DOMParser().parseFromString(MosaicRasterizer.exportSVG(payload), "image/svg+xml");
-    $("printArea").replaceChildren(document.importNode(documentSVG.documentElement, true));
-    return;
-  }
-  const element = (tag, attributes) => {
-    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, String(value)));
-    return node;
-  };
-  const svg = element("svg", { xmlns: "http://www.w3.org/2000/svg",
-    width: `${payload.width_cm}cm`, height: `${payload.height_cm}cm`,
-    viewBox: `0 0 ${payload.columns} ${payload.rows}`, preserveAspectRatio: "none", "shape-rendering": "crispEdges" });
-  payload.cells.forEach((cell, i) => svg.append(element("rect", {
-    x: i % payload.columns, y: Math.floor(i / payload.columns), width: 1, height: 1, fill: payload.palette[cell],
-  })));
-  if (payload.show_grid) {
-    const lines = [];
-    for (let x = 1; x < payload.columns; x++) lines.push(`M ${x} 0 V ${payload.rows}`);
-    for (let y = 1; y < payload.rows; y++) lines.push(`M 0 ${y} H ${payload.columns}`);
-    svg.append(element("path", { d: lines.join(" "), fill: "none", stroke: state.result.grid_color, "stroke-width": .025 }));
-  }
-  $("printArea").replaceChildren(svg);
+  const documentSVG = new DOMParser().parseFromString(MosaicRasterizer.exportSVG(mosaicPayload()), "image/svg+xml");
+  $("printArea").replaceChildren(document.importNode(documentSVG.documentElement, true));
 }
 
 function updateDimensions() {
@@ -270,34 +256,14 @@ function drawPreview() {
   $("originalImage").hidden = !original;
   workspace.classList.toggle("original-mode", original);
   workspace.classList.toggle("hexagon-mode", !original && state.shape === "hexagon");
+  workspace.classList.toggle("transparency-mode", original || state.result?.alphas?.some(alpha => alpha < 255));
   if (!state.result || state.mosaicDirty || original) return;
   const canvas = $("previewCanvas");
   const scale = Math.min(window.devicePixelRatio || 1, 3);
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
-  if (state.result.grid_shape === "hexagon") {
-    MosaicRasterizer.paintMosaic(canvas, { ...state.result, show_grid: $("gridLines").checked });
-    canvas.setAttribute("aria-label", `${state.result.cells.length} hexagon mosaic using ${state.result.used_colors} colors`);
-    return;
-  }
-  const ctx = canvas.getContext("2d");
-  const { columns, rows, cells, palette } = state.result;
-  cells.forEach((cell, i) => {
-    const x = i % columns, y = Math.floor(i / columns);
-    const left = Math.round(x * canvas.width / columns), top = Math.round(y * canvas.height / rows);
-    const right = Math.round((x + 1) * canvas.width / columns), bottom = Math.round((y + 1) * canvas.height / rows);
-    ctx.fillStyle = palette[cell];
-    ctx.fillRect(left, top, right - left, bottom - top);
-  });
-  if ($("gridLines").checked) {
-    ctx.strokeStyle = state.result.grid_color;
-    ctx.lineWidth = Math.max(1, Math.min(canvas.width / columns, canvas.height / rows) * .025);
-    ctx.beginPath();
-    for (let x = 1; x < columns; x++) { const p = Math.round(x * canvas.width / columns); ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height); }
-    for (let y = 1; y < rows; y++) { const p = Math.round(y * canvas.height / rows); ctx.moveTo(0, p); ctx.lineTo(canvas.width, p); }
-    ctx.stroke();
-  }
-  canvas.setAttribute("aria-label", `${columns} by ${rows} mosaic using ${state.result.used_colors} colors`);
+  MosaicRasterizer.paintMosaic(canvas, { ...state.result, show_grid: $("gridLines").checked });
+  canvas.setAttribute("aria-label", `${state.result.columns} by ${state.result.rows} ${state.result.grid_shape} mosaic using ${state.result.used_colors} colors`);
 }
 
 function renderSource(result) {
@@ -325,7 +291,7 @@ function renderResult(result) {
   if (!previousPalette || previousPalette.length !== result.palette.length || previousPalette.some((color, i) => color !== result.palette[i])) state.selectedColor = 0;
   state.result = result;
   state.mosaicDirty = false;
-  state.editor = new MosaicEditor(result.cells, result.palette.length);
+  state.editor = new MosaicEditor(result.cells, result.palette.length, 200, result.alphas);
   $("colorCount").textContent = String(result.palette.length);
   $("paletteTitle").textContent = `Your ${result.palette.length} color${result.palette.length === 1 ? "" : "s"}`;
   $("usedColors").textContent = `${result.used_colors} of ${result.palette.length} colors used`;
@@ -366,7 +332,7 @@ async function convert(candidate = null, crop = undefined) {
   state.controller = new AbortController();
   setBusy(true);
   const options = { grid: $("gridSize").value, gridRows: state.gridLinked ? null : $("gridRows").value, shape: state.shape, palette: state.palette, fit: "contain",
-    colors: $("colorLimit").value, mirror: $("mirrorHorizontal").checked, previewOnly: state.view === "original" };
+    colors: $("colorLimit").value, mirror: $("mirrorHorizontal").checked, transparency: $("preserveTransparency").checked, previewOnly: state.view === "original" };
   for (const name of adjustmentNames) options[name] = $(name).value;
   const requestedCrop = state.pendingCrop !== undefined ? state.pendingCrop : state.crop;
   options.crop = requestedCrop;
@@ -407,6 +373,7 @@ async function convert(candidate = null, crop = undefined) {
         $("colorLimit").max = MosaicRasterizer.PRESETS[state.palette].max;
         $("colorLimit").value = state.preview.color_count;
         $("mirrorHorizontal").checked = state.preview.mirror;
+        $("preserveTransparency").checked = state.preview.transparency;
         for (const name of adjustmentNames) $(name).value = state.preview.adjustments[name];
         updateAdjustments();
         syncPaletteButtons();
@@ -732,7 +699,7 @@ $("previewCanvas").addEventListener("pointerdown", (event) => {
   if (!cell) return;
   event.preventDefault();
   $("previewCanvas").focus({ preventScroll: true });
-  if (state.tool === "picker") { selectColor(state.result.cells[cell.index]); return; }
+  if (state.tool === "picker") { selectColor(state.result.alphas?.[cell.index] === 0 ? -1 : state.result.cells[cell.index]); return; }
   if (state.tool === "fill") {
     if (state.editor.fill(cell.index, state.selectedColor, state.result)) refreshEdits();
     return;
@@ -765,6 +732,7 @@ $("customColorHex").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); useCustomColor(); }
 });
 $("useCustomColor").addEventListener("click", useCustomColor);
+$("transparentColor").addEventListener("click", () => selectColor(-1));
 window.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest("input, select, textarea, [contenteditable], dialog")) return;
   const key = event.key.toLowerCase();
@@ -856,6 +824,7 @@ $("mirrorHorizontal").addEventListener("change", () => {
 for (const [id, mode] of paletteButtons) $(id).addEventListener("click", () => choosePalette(mode));
 $("colorLimit").addEventListener("input", () => { updateColorLimit(); scheduleConversion(); });
 $("gridLines").addEventListener("change", drawPreview);
+$("preserveTransparency").addEventListener("change", scheduleConversion);
 $("mosaicView").addEventListener("click", () => setView("mosaic"));
 $("originalView").addEventListener("click", () => setView("original"));
 $("resetButton").addEventListener("click", loadSample);

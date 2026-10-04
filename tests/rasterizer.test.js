@@ -76,15 +76,15 @@ test("averaging includes all source pixels and handles fractional cell boundarie
 });
 test("hidden transparent colors and semi-transparent edges blend onto white", () => {
   for (const palette of ["image", "studio"]) {
-    assert.deepEqual(used(solid([210, 3, 55, 0], { palette })), new Set(["#FFFFFF"]));
-    assert.deepEqual(used(solid([210, 3, 55, 0], { palette, vibrance: 100, brightness: -100, contrast: -100 })), new Set(["#FFFFFF"]));
+    assert.deepEqual(used(solid([210, 3, 55, 0], { palette, transparency: false })), new Set(["#FFFFFF"]));
+    assert.deepEqual(used(solid([210, 3, 55, 0], { palette, transparency: false, vibrance: 100, brightness: -100, contrast: -100 })), new Set(["#FFFFFF"]));
   }
-  assert.deepEqual(used(solid([255, 0, 0, 128], { palette: "image" })), new Set(["#FF7F7F"]));
-  assert.deepEqual(used(solid([100, 20, 30, 128], { palette: "image", brightness: -100 })), new Set(["#7F7F7F"]));
+  assert.deepEqual(used(solid([255, 0, 0, 128], { transparency: false, palette: "image" })), new Set(["#FF7F7F"]));
+  assert.deepEqual(used(solid([100, 20, 30, 128], { transparency: false, palette: "image", brightness: -100 })), new Set(["#7F7F7F"]));
 });
 test("foreground alpha is flattened before cell averaging", () => {
   const data = pixels(10, 10, x => x % 2 ? [255, 0, 0, 255] : [0, 0, 255, 0]);
-  assert.deepEqual(used(R.rasterizePixels(data, 10, 10, { grid: 5, palette: "image" })), new Set(["#FF8080"]));
+  assert.deepEqual(used(R.rasterizePixels(data, 10, 10, { grid: 5, transparency: false, palette: "image" })), new Set(["#FF8080"]));
 });
 test("brightness, contrast and adaptive vibrance affect colors predictably", () => {
   assert.equal(output([100, 100, 100], { brightness: 50 }), "#969696");
@@ -108,7 +108,7 @@ test("crop selects original pixels, normalizes edges, and remains stable on rege
 test("contain adds white padding while cover crops the centered square", () => {
   const data = pixels(15, 5, x => [...rgb(R.PALETTE[x >= 5 && x < 10 ? 10 : 0]), 255]);
   const cover = R.rasterizePixels(data, 15, 5, { grid: 5 });
-  const fit = R.rasterizePixels(data, 15, 5, { grid: 5, fit: "contain", brightness: -100 });
+  const fit = R.rasterizePixels(data, 15, 5, { grid: 5, fit: "contain", brightness: -100, transparency: false });
   assert.deepEqual(cover.cells, Array(25).fill(10)); assert.equal(fit.cells[0], 18); assert.equal(fit.cells[12], 16);
 });
 test("adaptive palettes keep exact colors for simple images and quantize complex images to 20", () => {
@@ -137,7 +137,7 @@ test("color limits bound all palette sizes and exports while preserving white tr
   const data = pixels(32, 32, (x, y) => [x * 8, y * 8, (x + y) % 32 * 8, x < 5 ? 0 : 255]);
   for (const [mode, preset] of Object.entries(R.PRESETS)) {
     for (const colors of [2, 5, preset.max]) {
-      const result = R.rasterizePixels(data, 32, 32, { grid: 32, palette: mode, colors });
+      const result = R.rasterizePixels(data, 32, 32, { grid: 32, palette: mode, colors, transparency: false });
       assert.ok(result.palette.length <= colors, mode);
       assert.equal(new Set(result.palette).size, result.palette.length, mode);
       assert.equal(result.counts.reduce((a, b) => a + b), 1024);
@@ -255,7 +255,7 @@ test("linked print sizing stays inside print limits for extreme grids", () => {
 
 test("invalid settings, crop, dimensions and pixel data are rejected", () => {
   const data = pixels(5, 5, () => [0, 0, 0, 255]);
-  for (const options of [{ grid: 4 }, { grid: 21.5 }, { grid: "nan" }, { gridRows: 4 }, { gridRows: 65 }, { gridRows: 7.5 }, { gridRows: "nan" }, { shape: "hexagon", gridRows: 75 }, { palette: "bad" }, { fit: "bad" }, { mirror: "false" },
+  for (const options of [{ grid: 4 }, { grid: 21.5 }, { grid: "nan" }, { gridRows: 4 }, { gridRows: 65 }, { gridRows: 7.5 }, { gridRows: "nan" }, { shape: "hexagon", gridRows: 75 }, { palette: "bad" }, { fit: "bad" }, { mirror: "false" }, { transparency: "false" },
     { vibrance: 101 }, { brightness: "nan" }, { contrast: -101 }, { crop: [] }, { crop: [1, 0, .5, 1] }, { crop: [-.1, 0, 1, 1] }]) {
     assert.throws(() => R.rasterizePixels(data, 5, 5, options));
   }

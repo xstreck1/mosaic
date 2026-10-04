@@ -3,11 +3,11 @@ const test = require("node:test"), assert = require("node:assert/strict"), fs = 
 const R = require("../static/rasterizer.js");
 
 function worker() {
-  const messages = [], writes = [], calls = { rasterize: 0, decode: 0 };
+  const messages = [], writes = [], calls = { rasterize: 0, decode: 0, flatten: 0 };
   class Canvas {
     constructor(width, height) { this.width = width; this.height = height; }
     getContext() {
-      return { fillRect() {}, drawImage() {},
+      return { fillRect() { calls.flatten++; }, drawImage() {},
         getImageData: (x, y, width, height) => {
           const data = new Uint8ClampedArray(width * height * 4);
           for (let i = 0; i < data.length; i += 4) data.set([100, 60, 80, 128], i);
@@ -42,6 +42,22 @@ test("Original updates adjusted previews without ever calculating mosaic squares
   await w.send({ grid: 5, previewOnly: true, brightness: -50 });
   assert.equal(w.calls.rasterize, 0);
   assert.deepEqual(w.writes[1], [50, 30, 40, 128]);
+});
+
+test("Original and Mosaic preserve source alpha and refresh when white flattening is toggled", async () => {
+  const w = worker();
+  await w.send({ grid: 5, previewOnly: true });
+  assert.equal(w.calls.flatten, 0);
+  await w.send({ grid: 5 });
+  assert.ok(w.messages[1].result.alphas.every(alpha => alpha === 128));
+  await w.send({ grid: 5, previewOnly: true, transparency: false });
+  assert.equal(w.calls.flatten, 1);
+  await w.send({ grid: 5, transparency: false });
+  assert.ok(w.messages[3].result.alphas.every(alpha => alpha === 255));
+  assert.equal(w.calls.flatten, 1, "same flattened preview is cached");
+  await w.send({ grid: 5, previewOnly: true, transparency: true });
+  assert.equal(w.calls.flatten, 1);
+  assert.equal(w.calls.decode, 1);
 });
 
 test("selecting Mosaic calculates squares once using the latest adjustment values", async () => {

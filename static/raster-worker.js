@@ -4,30 +4,30 @@ importScripts("./rasterizer.js");
 let cachedBlob = null, pixels = null, sourceCanvas = null, sourcePreview = null;
 let adjustedPreview = null, adjustedKey = null;
 
-async function preview(canvas, bounds) {
+async function preview(canvas, bounds, transparency = true) {
   const [left, top, right, bottom] = bounds, width = right - left, height = bottom - top;
   const scale = Math.min(1, 1000 / Math.max(width, height));
   const output = new OffscreenCanvas(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
   const ctx = output.getContext("2d");
-  ctx.fillStyle = "white"; ctx.fillRect(0, 0, output.width, output.height);
+  if (!transparency) { ctx.fillStyle = "white"; ctx.fillRect(0, 0, output.width, output.height); }
   ctx.drawImage(canvas, left, top, width, height, 0, 0, output.width, output.height);
   return new FileReaderSync().readAsDataURL(await output.convertToBlob({ type: "image/png" }));
 }
 
 async function adjustedImagePreview(settings) {
-  const key = JSON.stringify([settings.crop, settings.adjustments]);
+  const key = JSON.stringify([settings.crop, settings.adjustments, settings.transparency]);
   if (key === adjustedKey) return adjustedPreview;
   const bounds = MosaicRasterizer.cropBounds(pixels.width, pixels.height, settings.crop);
   let value;
   if (!Object.values(settings.adjustments).some(Boolean)) {
-    value = settings.crop ? await preview(sourceCanvas, bounds) : sourcePreview;
+    value = settings.crop || !settings.transparency ? await preview(sourceCanvas, bounds, settings.transparency) : sourcePreview;
   } else {
     const [left, top, right, bottom] = bounds, width = right - left, height = bottom - top;
     const cropped = sourceCanvas.getContext("2d").getImageData(left, top, width, height);
     MosaicRasterizer.adjustPixels(cropped.data, settings.adjustments, true);
     const canvas = new OffscreenCanvas(width, height);
     canvas.getContext("2d").putImageData(cropped, 0, 0);
-    value = await preview(canvas, [0, 0, width, height]);
+    value = await preview(canvas, [0, 0, width, height], settings.transparency);
   }
   adjustedKey = key; adjustedPreview = value;
   return value;

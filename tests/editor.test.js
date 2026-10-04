@@ -97,7 +97,7 @@ test("large bucket fills are iterative and preserve redo for no-op fills", () =>
 test("invalid fill grids and clicks cannot corrupt cells or history", () => {
   const cells = [0, 1, 0, 1], editor = new MosaicEditor(cells, 2), grid = { columns: 2, rows: 2 };
   for (const index of [-1, 4, .5]) assert.equal(editor.fill(index, 1, grid), false);
-  for (const color of [-1, 2, .5]) assert.throws(() => editor.fill(0, color, grid), RangeError);
+  for (const color of [-2, 2, .5]) assert.throws(() => editor.fill(0, color, grid), RangeError);
   for (const patch of [{ columns: 3 }, { rows: 1 }, { grid_shape: "bad" }, { mirror: "false" }])
     assert.throws(() => editor.fill(0, 1, { ...grid, ...patch }), RangeError);
   assert.deepEqual(cells, [0, 1, 0, 1]);
@@ -183,7 +183,7 @@ test("history limit drops oldest steps without corrupting the current state", ()
 
 test("out-of-bounds cells and palette indices cannot corrupt a mosaic", () => {
   const editor = new MosaicEditor([0], 20);
-  for (const color of [-1, 20, 1.5]) assert.throws(() => editor.beginStroke(color), RangeError);
+  for (const color of [-2, 20, 1.5]) assert.throws(() => editor.beginStroke(color), RangeError);
   editor.beginStroke(19);
   for (const index of [-1, 1, 0.5]) assert.equal(editor.paint(index), false);
   assert.equal(editor.endStroke(), false);

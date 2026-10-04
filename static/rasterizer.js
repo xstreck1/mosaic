@@ -181,14 +181,15 @@
     number(width, "Image width", 1, 25000000, true); number(height, "Image height", 1, 25000000, true);
     if (width * height > 25000000) throw new Error("The image must be no larger than 25 megapixels.");
     const size = number(options.grid ?? 21, "Grid size", 5, 64, true), mode = options.palette === "studio" ? "vibrant" : options.palette ?? "vibrant", fit = options.fit ?? "cover", mirror = options.mirror ?? false;
-    const grid_shape = options.shape ?? "square";
+    const grid_shape = options.shape ?? "square", transparency = options.transparency ?? true;
     if (!["square", "hexagon"].includes(grid_shape)) throw new Error("Choose a valid grid shape.");
     if (typeof mirror !== "boolean") throw new Error("Choose a valid mirror setting.");
+    if (typeof transparency !== "boolean") throw new Error("Choose a valid transparency setting.");
     if (!Object.hasOwn(PRESETS, mode) || !["cover", "contain"].includes(fit)) throw new Error("Choose a valid palette and framing mode.");
     const color_count = number(options.colors ?? Math.min(20, PRESETS[mode].max), "Color limit", 2, PRESETS[mode].max, true);
     const [left, top, right, bottom] = cropBounds(width, height, options.crop);
     const layout = gridLayout(size, grid_shape, options.gridRows);
-    return { ...layout, grid_size: size, grid_rows: options.gridRows == null ? null : layout.rows, grid_shape, palette_mode: mode, color_count, fit_mode: fit, mirror, adjustments: adjustmentsFor(options),
+    return { ...layout, grid_size: size, grid_rows: options.gridRows == null ? null : layout.rows, grid_shape, palette_mode: mode, color_count, fit_mode: fit, mirror, transparency, adjustments: adjustmentsFor(options),
       source_size: [width, height], crop_size: [right - left, bottom - top],
       crop: options.crop == null ? null : [left / width, top / height, right / width, bottom / height] };
   }
@@ -295,7 +296,7 @@
     for (let index = 0; index < grid.columns * grid.rows; index++) {
       const points = cellPolygon(grid, index), cx = originX + points[0][0] * side, cy = originY + (points[0][1] * side + dy / 2);
       const area = polygonArea(clippedCell(grid, index)) * side * side;
-      let red = 255 * area, green = red, blue = red;
+      let red = 0, green = 0, blue = 0, opacity = 0;
       const halfWidth = y => dx * Math.min(.5, Math.max(0, 1 - 2 * Math.abs((y - cy) / dy)));
       for (let y = Math.max(top, Math.floor(cy - dy / 2), Math.floor(originY)); y < Math.min(bottom, Math.ceil(cy + dy / 2), Math.ceil(originY + side)); y++) {
         const y0 = Math.max(y, cy - dy / 2, originY), y1 = Math.min(y + 1, cy + dy / 2, originY + side);
@@ -308,13 +309,18 @@
             const weight = bandArea(l0, l1, r0, r1, Math.max(x, originX), Math.min(x + 1, originX + side), z - a) * data[(y * width + x) * 4 + 3] / 255;
             if (!weight) continue;
             const i = (y * width + x) * 4, color = adjust(data[i], data[i + 1], data[i + 2]);
-            red += ((color >> 16) - 255) * weight; green += (((color >> 8) & 255) - 255) * weight; blue += ((color & 255) - 255) * weight;
+            red += (color >> 16) * weight; green += ((color >> 8) & 255) * weight; blue += (color & 255) * weight; opacity += weight;
           }
         }
       }
-      samples.push([clamp(red / area), clamp(green / area), clamp(blue / area)]);
+      samples.push(sampleColor(red, green, blue, opacity, area, settings.transparency));
     }
     return samples;
+  }
+
+  function sampleColor(red, green, blue, opacity, area, transparency) {
+    if (!transparency) return [red, green, blue].map(v => clamp(v / area + 255 * (1 - opacity / area))).concat(255);
+    return opacity ? [red, green, blue].map(v => clamp(v / opacity)).concat(clamp(255 * opacity / area)) : [255, 255, 255, 0];
   }
 
   function cropBounds(width, height, crop) {
@@ -365,7 +371,8 @@
     const { columns, rows, palette_mode: mode, color_count: limit, fit_mode: fit, mirror, adjustments } = settings;
     const bounds = cropBounds(width, height, options.crop), [left, top, right, bottom] = bounds;
     const cw = right - left, ch = bottom - top, side = fit === "cover" ? Math.min(cw, ch) : Math.max(cw, ch);
-    // Sample in original pixel coordinates. Outside a contained image is white.
+    // Average premultiplied colors and coverage independently; hidden RGB does
+    // not tint the foreground. Outside a contained image has zero coverage.
     const originX = left + (cw - side) / 2, originY = top + (ch - side) / 2, cellWidth = side / columns, cellHeight = side / rows;
     const adjust = colorAdjuster(adjustments);
     const samples = settings.grid_shape === "hexagon" ? hexSamples(data, width, bounds, side, originX, originY, settings, adjust) : [];
@@ -373,7 +380,7 @@
       for (let col = 0; col < columns; col++) {
         const x0 = originX + col * cellWidth, x1 = x0 + cellWidth, y0 = originY + row * cellHeight, y1 = y0 + cellHeight;
         const area = cellWidth * cellHeight;
-        let red = 255 * area, green = red, blue = red;
+        let red = 0, green = 0, blue = 0, opacity = 0;
         for (let y = Math.max(top, Math.floor(y0)); y < Math.min(bottom, Math.ceil(y1)); y++) {
           const wy = Math.min(y + 1, y1) - Math.max(y, y0);
           for (let x = Math.max(left, Math.floor(x0)); x < Math.min(right, Math.ceil(x1)); x++) {
@@ -381,21 +388,26 @@
             if (!alpha) continue;
             const color = adjust(data[i], data[i + 1], data[i + 2]);
             const weight = (Math.min(x + 1, x1) - Math.max(x, x0)) * wy * alpha;
-            red += ((color >> 16) - 255) * weight; green += (((color >> 8) & 255) - 255) * weight; blue += ((color & 255) - 255) * weight;
+            red += (color >> 16) * weight; green += ((color >> 8) & 255) * weight; blue += (color & 255) * weight; opacity += weight;
           }
         }
-        samples.push([clamp(red / area), clamp(green / area), clamp(blue / area)]);
+        samples.push(sampleColor(red, green, blue, opacity, area, settings.transparency));
       }
     }
-    let palette, cells, names = [];
-    if (mode === "image") ({ palette, cells } = adaptivePalette(samples, limit));
-    else ({ palette, cells, names } = fixedPalette(samples, PRESETS[mode], limit));
-    if (mirror) cells = cells.flatMap((_, i) => i % columns === 0 ? cells.slice(i, i + columns).reverse() : []);
-    const counts = Array(palette.length).fill(0); cells.forEach(i => counts[i]++);
-    return { ...settings, cells, palette, counts,
+    const visible = samples.filter(color => color[3]).map(color => color.slice(0, 3));
+    let palette = ["#FFFFFF"], mapped = [], names = [];
+    if (visible.length && mode === "image") ({ palette, cells: mapped } = adaptivePalette(visible, limit));
+    else if (visible.length) ({ palette, cells: mapped, names } = fixedPalette(visible, PRESETS[mode], limit));
+    let cursor = 0, cells = samples.map(color => color[3] ? mapped[cursor++] : 0), alphas = samples.map(color => color[3]);
+    if (mirror) {
+      const reverseRows = values => values.flatMap((_, i) => i % columns === 0 ? values.slice(i, i + columns).reverse() : []);
+      cells = reverseRows(cells); alphas = reverseRows(alphas);
+    }
+    const counts = Array(palette.length).fill(0); cells.forEach((color, i) => { if (alphas[i]) counts[color]++; });
+    return { ...settings, cells, alphas, palette, counts,
       palette_names: names,
       grid_color: darkest(palette),
-      used_colors: new Set(cells.map(i => palette[i])).size };
+      used_colors: new Set(cells.filter((_, i) => alphas[i]).map(i => palette[i])).size };
   }
 
   function darkest(palette) { return palette.reduce((best, color) => lab(rgb(color))[0] < lab(rgb(best))[0] ? color : best); }
@@ -408,21 +420,29 @@
     const width_cm = number(payload.width_cm ?? 11, "Width", 1, 50), height_cm = number(payload.height_cm ?? 11, "Height", 1, 50);
     if (!Array.isArray(payload.palette) || payload.palette.length < 1 || payload.palette.length > 64 || payload.palette.some(c => typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c))) throw new Error("Choose a valid palette with 1 to 64 colors.");
     if (!Array.isArray(payload.cells) || payload.cells.length !== columns * rows || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
+    if (payload.alphas !== undefined && (!Array.isArray(payload.alphas) || payload.alphas.length !== payload.cells.length ||
+      payload.alphas.some(alpha => !Number.isInteger(alpha) || alpha < 0 || alpha > 255))) throw new Error("Invalid tile opacity.");
     if (payload.show_grid !== undefined && typeof payload.show_grid !== "boolean") throw new Error("Invalid grid option.");
     return { ...payload, columns, rows, grid_shape, mirror, width_cm, height_cm, show_grid: payload.show_grid ?? false };
   }
 
   function exportSVG(payload) {
     const p = validateExport(payload), { columns, rows, width_cm, height_cm, cells, palette } = p;
+    const alphaAt = i => p.alphas?.[i] ?? 255;
+    const opacity = i => alphaAt(i) < 255 ? ` opacity="${alphaAt(i) / 255}"` : "";
     if (p.grid_shape === "hexagon") {
-      const polygons = cells.map((cell, i) => `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>`).join("");
-      const lines = p.show_grid ? cells.map((_, i) => `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"/>`).join("") : "";
+      const polygons = cells.map((cell, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"${opacity(i)}/>` : "").join("");
+      const lines = p.show_grid ? cells.map((_, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"${opacity(i)}/>` : "").join("") : "";
       return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 1 1" preserveAspectRatio="none" overflow="hidden"><title>Mosaic — ${cells.length} hexagons, ${width_cm} × ${height_cm} cm</title>${polygons}${lines ? `<g fill="none" stroke="${darkest(palette)}" stroke-width="${.025 / columns}">${lines}</g>` : ""}</svg>`;
     }
     let svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 ${columns} ${rows}" preserveAspectRatio="none" shape-rendering="crispEdges">`;
     svg += `<title>Mosaic — ${columns} × ${rows} squares, ${width_cm} × ${height_cm} cm</title>`;
-    cells.forEach((cell, i) => { svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="${palette[cell]}"/>`; });
+    cells.forEach((cell, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="${palette[cell]}"${opacity(i)}/>`; });
     if (p.show_grid) {
+      if (p.alphas?.some(alpha => alpha < 255)) {
+        cells.forEach((_, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="none" stroke="${darkest(palette)}" stroke-width="0.025"${opacity(i)}/>`; });
+        return svg + "</svg>";
+      }
       const commands = [];
       for (let x = 1; x < columns; x++) commands.push(`M ${x} 0 V ${rows}`);
       for (let y = 1; y < rows; y++) commands.push(`M 0 ${y} H ${columns}`);
@@ -445,8 +465,9 @@
   function paintMosaic(canvas, p) {
     const width = canvas.width, height = canvas.height;
     const ctx = canvas.getContext("2d");
+    const alphaAt = i => p.alphas?.[i] ?? 255, translucent = p.alphas?.some(alpha => alpha < 255);
+    if (translucent || p.grid_shape === "hexagon") ctx.clearRect(0, 0, width, height);
     if (p.grid_shape === "hexagon") {
-      ctx.clearRect(0, 0, width, height);
       const path = points => {
         ctx.beginPath();
         points.forEach(([x, y], i) => i ? ctx.lineTo(x * width, y * height) : ctx.moveTo(x * width, y * height));
@@ -455,23 +476,41 @@
       // A hairline of each tile's own color prevents antialiasing seams.
       ctx.lineWidth = .7; ctx.lineJoin = "round";
       p.cells.forEach((cell, i) => {
-        path(cellPolygon(p, i)); ctx.fillStyle = p.palette[cell]; ctx.strokeStyle = p.palette[cell]; ctx.fill(); ctx.stroke();
+        if (!alphaAt(i)) return;
+        ctx.globalAlpha = alphaAt(i) / 255;
+        path(cellPolygon(p, i)); ctx.fillStyle = p.palette[cell]; ctx.strokeStyle = p.palette[cell]; ctx.fill();
+        if (alphaAt(i) === 255) ctx.stroke();
       });
       if (p.show_grid) {
         ctx.strokeStyle = darkest(p.palette);
         ctx.lineWidth = Math.max(.5, Math.min(width / (p.columns + .5), height / ((p.rows - 1) * .75 + 1)) * .025);
-        p.cells.forEach((_, i) => { path(cellPolygon(p, i)); ctx.stroke(); });
+        p.cells.forEach((_, i) => { if (alphaAt(i)) { ctx.globalAlpha = alphaAt(i) / 255; path(cellPolygon(p, i)); ctx.stroke(); } });
       }
+      ctx.globalAlpha = 1;
       return canvas;
     }
     p.cells.forEach((cell, i) => {
+      if (!alphaAt(i)) return;
+      ctx.globalAlpha = alphaAt(i) / 255;
       const x = i % p.columns, y = Math.floor(i / p.columns), left = Math.round(x * width / p.columns), top = Math.round(y * height / p.rows);
       ctx.fillStyle = p.palette[cell];
       ctx.fillRect(left, top, Math.round((x + 1) * width / p.columns) - left, Math.round((y + 1) * height / p.rows) - top);
     });
+    ctx.globalAlpha = 1;
     if (p.show_grid) {
       ctx.fillStyle = darkest(p.palette);
       const stroke = Math.max(1, Math.round(Math.min(width / p.columns, height / p.rows) * .025));
+      if (translucent) {
+        ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = stroke;
+        p.cells.forEach((_, i) => {
+          if (!alphaAt(i)) return;
+          ctx.globalAlpha = alphaAt(i) / 255;
+          const x = i % p.columns, y = Math.floor(i / p.columns), left = Math.round(x * width / p.columns), top = Math.round(y * height / p.rows);
+          ctx.strokeRect(left + stroke / 2, top + stroke / 2, Math.max(0, Math.round((x + 1) * width / p.columns) - left - stroke), Math.max(0, Math.round((y + 1) * height / p.rows) - top - stroke));
+        });
+        ctx.globalAlpha = 1;
+        return canvas;
+      }
       for (let x = 1; x < p.columns; x++) ctx.fillRect(Math.round(x * width / p.columns) - Math.floor(stroke / 2), 0, stroke, height);
       for (let y = 1; y < p.rows; y++) ctx.fillRect(0, Math.round(y * height / p.rows) - Math.floor(stroke / 2), width, stroke);
     }
