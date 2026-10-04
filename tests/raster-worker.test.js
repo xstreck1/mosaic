@@ -69,3 +69,17 @@ test("hexagon selection in Original defers tile calculation until Mosaic and pre
   assert.equal(w.messages[1].result.cells.length, 30);
   assert.equal(w.writes.length, 1);
 });
+
+test("Original preserves independent grid axes without calculating tiles", async () => {
+  for (const shape of ["square", "hexagon"]) {
+    const w = worker();
+    await w.send({ grid: 7, gridRows: 17, shape, previewOnly: true, brightness: 30 });
+    assert.equal(w.calls.rasterize, 0);
+    assert.deepEqual([w.messages[0].result.columns, w.messages[0].result.rows], [7, 17]);
+    await w.send({ grid: 7, gridRows: 17, shape, brightness: 30 });
+    assert.equal(w.calls.rasterize, 1);
+    assert.equal(w.messages[1].result.cells.length, 119);
+    assert.equal(w.calls.decode, 1);
+    assert.equal(w.writes.length, 1);
+  }
+});

@@ -192,9 +192,24 @@ test("mirror reverses rows after conversion without changing palette or counts",
     assert.deepEqual(mirrored.counts, original.counts); assert.deepEqual(mirrored.palette, original.palette);
   }
 });
+test("independent grid axes sample every rectangular tile and export the same layout", () => {
+  const data = pixels(40, 50, (x, y) => [x * 4, y * 4, 0, 255]);
+  const result = R.rasterizePixels(data, 40, 50, { grid: 5, gridRows: 8, palette: "image", colors: 64 });
+  assert.deepEqual([result.columns, result.rows, result.cells.length], [5, 8, 40]);
+  for (let row = 0; row < 8; row++) for (let col = 0; col < 5; col++) {
+    assert.deepEqual(rgb(result.palette[result.cells[row * 5 + col]]), [col * 32 + 14, row * 20 + 28, 0]);
+  }
+  const mirrored = R.rasterizePixels(data, 40, 50, { grid: 5, gridRows: 8, palette: "image", colors: 64, mirror: true });
+  for (let row = 0; row < 8; row++) assert.deepEqual(mirrored.cells.slice(row * 5, row * 5 + 5), result.cells.slice(row * 5, row * 5 + 5).reverse());
+  const svg = R.exportSVG({ ...result, width_cm: 11, height_cm: 11 });
+  assert.match(svg, /viewBox="0 0 5 8"/);
+  assert.equal((svg.match(/<rect /g) || []).length, 40);
+  assert.match(svg, /<rect x="4" y="7"/);
+});
+
 test("invalid settings, crop, dimensions and pixel data are rejected", () => {
   const data = pixels(5, 5, () => [0, 0, 0, 255]);
-  for (const options of [{ grid: 4 }, { grid: 21.5 }, { grid: "nan" }, { palette: "bad" }, { fit: "bad" }, { mirror: "false" },
+  for (const options of [{ grid: 4 }, { grid: 21.5 }, { grid: "nan" }, { gridRows: 4 }, { gridRows: 65 }, { gridRows: 7.5 }, { gridRows: "nan" }, { shape: "hexagon", gridRows: 75 }, { palette: "bad" }, { fit: "bad" }, { mirror: "false" },
     { vibrance: 101 }, { brightness: "nan" }, { contrast: -101 }, { crop: [] }, { crop: [1, 0, .5, 1] }, { crop: [-.1, 0, 1, 1] }]) {
     assert.throws(() => R.rasterizePixels(data, 5, 5, options));
   }

@@ -42,6 +42,26 @@ test("complete hexagonal sampling preserves solid colors and transparent backgro
   }
 });
 
+test("independent hexagon rows preserve complete tiles, hit testing and painted export colors", () => {
+  for (const [columns, rows] of [[5, 74], [64, 5], [7, 17]]) {
+    const result = R.rasterizePixels(pixels(12, 12, () => [0, 0, 255, 255]), 12, 12, { grid: columns, gridRows: rows, shape: "hexagon", palette: "image" });
+    assert.deepEqual([result.columns, result.rows, result.cells.length], [columns, rows, columns * rows]);
+    assert.deepEqual(result.palette, ["#0000FF"]);
+    for (let index = 0; index < result.cells.length; index++) {
+      const points = R.cellPolygon(result, index);
+      assert.equal(points.length, 6);
+      assert.ok(points.every(point => point.every(value => value >= 0 && value <= 1)));
+      const center = points.reduce((sum, point) => sum.map((value, axis) => value + point[axis] / 6), [0, 0]);
+      assert.equal(R.cellAtPoint(result, ...center), index);
+    }
+    const editor = new MosaicEditor(result.cells, result.palette.length);
+    editor.beginStroke(editor.addColor("#FF0000", result.palette)); editor.paint(result.cells.length - 1); editor.endStroke();
+    const svg = R.exportSVG({ ...result, width_cm: 11, height_cm: 11 });
+    assert.equal((svg.match(/<polygon /g) || []).length, columns * rows);
+    assert.match(svg, /fill="#FF0000"/);
+  }
+});
+
 test("hexagon colors average actual polygon coverage rather than bounding rectangles", () => {
   const width = 17, height = 13;
   const data = pixels(width, height, (x, y) => [x * 13, y * 18, (x * 31 + y * 7) % 256, 255]);

@@ -37,9 +37,10 @@
         <section class="control-section">
           <h2><span class="step">02</span> Set your grid</h2>
           <div class="segmented grid-selector" role="group" aria-label="Grid shape"><button id="squareGrid" class="active" aria-pressed="true">Squares</button><button id="hexagonGrid" aria-pressed="false">Hexagons</button></div>
-          <div class="label-row"><label for="gridSize">Grid size</label><output id="gridLabel" for="gridSize">21 × 21</output></div>
+          <div class="label-row grid-size-heading"><span>Grid size</span><button class="link-button" id="lockGridSize" aria-pressed="true" title="Link grid columns and rows" aria-label="Link grid columns and rows">↔ Linked</button></div>
+          <div class="label-row"><label id="gridSizeLabel" for="gridSize">Size</label><output id="gridLabel" for="gridSize">21 × 21</output></div>
           <input id="gridSize" class="range" type="range" min="5" max="64" value="21">
-          <div class="range-captions"><span>Chunky</span><span>Detailed</span></div>
+          <div id="gridRowsControl" class="grid-rows-control" hidden><div class="label-row"><label for="gridRows">Rows</label><output id="gridRowsValue" for="gridRows">21</output></div><input id="gridRows" class="range" type="range" min="5" max="64" value="21" disabled></div>
           <label class="check-label"><input type="checkbox" id="gridLines"><span>Show grid lines</span></label>
           <label class="check-label"><input type="checkbox" id="mirrorHorizontal"><span>Mirror horizontally</span></label>
           <div class="label-row print-label"><span>Print dimensions</span><button class="link-button" id="lockSize" aria-pressed="true" title="Link width and height">↔ Linked</button></div>

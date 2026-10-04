@@ -15,7 +15,7 @@ function updateAdjustments(editingName = null) {
 }
 const state = { source: null, sourceId: 0, sourceSequence: 0, sourceName: "Sunset study", sourceStyle: "Flat illustration", isDemo: true, result: null,
   preview: null, mosaicDirty: true,
-  palette: "image", shape: "square", view: "mosaic", linked: true, controller: null, revision: 0,
+  palette: "image", shape: "square", view: "mosaic", linked: true, gridLinked: true, controller: null, revision: 0,
   gallery: [], gallerySequence: 0, selectedGalleryId: null,
   timer: null, noticeTimer: null, busy: false, exporting: false, printing: false, pendingSource: null,
   editor: null, selectedColor: 0, pointerId: null, lastCell: null,
@@ -222,15 +222,16 @@ function preparePrint() {
 function updateDimensions() {
   const width = Number($("widthCm").value), height = Number($("heightCm").value);
   const grid = Number($("gridSize").value);
-  const hex = state.shape === "hexagon", layout = MosaicRasterizer.gridLayout(grid, state.shape);
-  $("gridLabel").textContent = hex ? `${grid} across` : `${grid} × ${grid}`;
-  $("previewTag").textContent = hex ? `${layout.columns * layout.rows} hexagons` : `${grid} × ${grid} squares`;
+  const hex = state.shape === "hexagon", layout = currentGridLayout();
+  $("gridLabel").textContent = state.gridLinked ? hex ? `${grid} across` : `${grid} × ${grid}` : String(layout.columns);
+  $("gridRowsValue").textContent = String(layout.rows);
+  $("previewTag").textContent = hex ? `${layout.columns * layout.rows} hexagons` : `${layout.columns} × ${layout.rows} squares`;
   $("squareCount").textContent = (layout.columns * layout.rows).toLocaleString();
   $("cellCountLabel").textContent = hex ? "hexagons" : "squares";
   const valid = validDimensions();
   $("canvasSize").textContent = valid ? `${width} × ${height} cm` : "Set print dimensions";
   $("physicalSize").textContent = valid ? `${width} × ${height}` : "—";
-  $("cellSize").textContent = valid ? hex ? `Hexagons are approximately ${(width * 10 / (layout.columns + .5)).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75 + 1)).toFixed(2)} mm. Only full tiles are shown.` : `Each square is ${(width * 10 / grid).toFixed(2)} × ${(height * 10 / grid).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
+  $("cellSize").textContent = valid ? hex ? `Hexagons are approximately ${(width * 10 / (layout.columns + .5)).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75 + 1)).toFixed(2)} mm. Only full tiles are shown.` : `Each tile is ${(width * 10 / layout.columns).toFixed(2)} × ${(height * 10 / layout.rows).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
   updateActionButtons();
   drawPreview();
 }
@@ -345,7 +346,7 @@ async function convert(candidate = null, crop = undefined) {
   state.controller?.abort();
   state.controller = new AbortController();
   setBusy(true);
-  const options = { grid: $("gridSize").value, shape: state.shape, palette: state.palette, fit: "contain",
+  const options = { grid: $("gridSize").value, gridRows: state.gridLinked ? null : $("gridRows").value, shape: state.shape, palette: state.palette, fit: "contain",
     colors: $("colorLimit").value, mirror: $("mirrorHorizontal").checked, previewOnly: state.view === "original" };
   for (const name of adjustmentNames) options[name] = $(name).value;
   const requestedCrop = state.pendingCrop !== undefined ? state.pendingCrop : state.crop;
@@ -379,6 +380,9 @@ async function convert(candidate = null, crop = undefined) {
         state.mosaicDirty = state.preview !== state.result;
         $("gridSize").value = state.preview.grid_size;
         state.shape = state.preview.grid_shape;
+        state.gridLinked = state.preview.grid_rows == null;
+        $("gridRows").value = state.preview.rows;
+        syncGridControls();
         syncGridButtons();
         state.palette = state.preview.palette_mode;
         $("colorLimit").max = MosaicRasterizer.PRESETS[state.palette].max;
@@ -410,6 +414,20 @@ function syncGridButtons() {
     $(id).classList.toggle("active", state.shape === shape);
     $(id).setAttribute("aria-pressed", String(state.shape === shape));
   }
+}
+
+function currentGridLayout() {
+  return MosaicRasterizer.gridLayout(Number($("gridSize").value), state.shape, state.gridLinked ? null : Number($("gridRows").value));
+}
+
+function syncGridControls() {
+  $("lockGridSize").setAttribute("aria-pressed", String(state.gridLinked));
+  $("lockGridSize").textContent = state.gridLinked ? "↔ Linked" : "↔ Unlinked";
+  $("gridSizeLabel").textContent = state.gridLinked ? "Size" : "Columns";
+  $("gridRowsControl").hidden = state.gridLinked;
+  $("gridRows").disabled = state.gridLinked;
+  $("gridRows").max = state.shape === "hexagon" ? 74 : 64;
+  if (state.gridLinked) $("gridRows").value = currentGridLayout().rows;
 }
 
 function syncPaletteButtons() {
@@ -728,10 +746,24 @@ for (const name of ["dragleave", "drop"]) $("dropzone").addEventListener(name, (
 $("dropzone").addEventListener("drop", (event) => loadFile(event.dataTransfer.files[0]));
 window.addEventListener("dragover", (event) => event.preventDefault());
 window.addEventListener("drop", (event) => event.preventDefault());
-$("gridSize").addEventListener("input", scheduleConversion);
+$("gridSize").addEventListener("input", () => { syncGridControls(); scheduleConversion(); });
+$("gridRows").addEventListener("input", scheduleConversion);
+$("lockGridSize").addEventListener("click", () => {
+  finishStroke();
+  const previous = currentGridLayout();
+  state.gridLinked = !state.gridLinked;
+  if (!state.gridLinked) $("gridRows").value = previous.rows;
+  syncGridControls();
+  const next = currentGridLayout();
+  if (state.busy || state.mosaicDirty || previous.rows !== next.rows) scheduleConversion();
+  else {
+    for (const result of [state.result, state.preview]) if (result) result.grid_rows = state.gridLinked ? null : next.rows;
+    updateDimensions();
+  }
+});
 for (const [id, shape] of [["squareGrid", "square"], ["hexagonGrid", "hexagon"]]) $(id).addEventListener("click", () => {
   if (state.shape === shape) return;
-  finishStroke(); state.shape = shape; syncGridButtons(); scheduleConversion();
+  finishStroke(); state.shape = shape; syncGridButtons(); syncGridControls(); scheduleConversion();
 });
 for (const name of adjustmentNames) {
   const slider = $(name), field = $(name + "Value");

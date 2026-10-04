@@ -187,13 +187,16 @@
     if (!Object.hasOwn(PRESETS, mode) || !["cover", "contain"].includes(fit)) throw new Error("Choose a valid palette and framing mode.");
     const color_count = number(options.colors ?? Math.min(20, PRESETS[mode].max), "Color limit", 2, PRESETS[mode].max, true);
     const [left, top, right, bottom] = cropBounds(width, height, options.crop);
-    return { ...gridLayout(size, grid_shape), grid_size: size, grid_shape, palette_mode: mode, color_count, fit_mode: fit, mirror, adjustments: adjustmentsFor(options),
+    const layout = gridLayout(size, grid_shape, options.gridRows);
+    return { ...layout, grid_size: size, grid_rows: options.gridRows == null ? null : layout.rows, grid_shape, palette_mode: mode, color_count, fit_mode: fit, mirror, adjustments: adjustmentsFor(options),
       source_size: [width, height], crop_size: [right - left, bottom - top],
       crop: options.crop == null ? null : [left / width, top / height, right / width, bottom / height] };
   }
 
-  function gridLayout(size, shape = "square") {
-    return shape === "hexagon" ? { columns: size, rows: Math.round(size * 2 / Math.sqrt(3)) } : { columns: size, rows: size };
+  function gridLayout(size, shape = "square", rowCount = null) {
+    const rows = rowCount == null ? shape === "hexagon" ? Math.round(size * 2 / Math.sqrt(3)) : size :
+      number(rowCount, "Grid rows", 5, shape === "hexagon" ? 74 : 64, true);
+    return { columns: size, rows };
   }
 
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
@@ -341,17 +344,17 @@
   function rasterizePixels(data, width, height, options = {}) {
     const settings = imageSettings(width, height, options);
     if (!data || data.length !== width * height * 4) throw new Error("Invalid image pixels.");
-    const { grid_size: size, columns, rows, palette_mode: mode, color_count: limit, fit_mode: fit, mirror, adjustments } = settings;
+    const { columns, rows, palette_mode: mode, color_count: limit, fit_mode: fit, mirror, adjustments } = settings;
     const bounds = cropBounds(width, height, options.crop), [left, top, right, bottom] = bounds;
     const cw = right - left, ch = bottom - top, side = fit === "cover" ? Math.min(cw, ch) : Math.max(cw, ch);
     // Sample in original pixel coordinates. Outside a contained image is white.
-    const originX = left + (cw - side) / 2, originY = top + (ch - side) / 2, cellSide = side / size;
+    const originX = left + (cw - side) / 2, originY = top + (ch - side) / 2, cellWidth = side / columns, cellHeight = side / rows;
     const adjust = colorAdjuster(adjustments);
     const samples = settings.grid_shape === "hexagon" ? hexSamples(data, width, bounds, side, originX, originY, settings, adjust) : [];
-    for (let row = 0; settings.grid_shape === "square" && row < size; row++) {
-      for (let col = 0; col < size; col++) {
-        const x0 = originX + col * cellSide, x1 = x0 + cellSide, y0 = originY + row * cellSide, y1 = y0 + cellSide;
-        const area = cellSide * cellSide;
+    for (let row = 0; settings.grid_shape === "square" && row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        const x0 = originX + col * cellWidth, x1 = x0 + cellWidth, y0 = originY + row * cellHeight, y1 = y0 + cellHeight;
+        const area = cellWidth * cellHeight;
         let red = 255 * area, green = red, blue = red;
         for (let y = Math.max(top, Math.floor(y0)); y < Math.min(bottom, Math.ceil(y1)); y++) {
           const wy = Math.min(y + 1, y1) - Math.max(y, y0);
