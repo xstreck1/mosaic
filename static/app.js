@@ -242,9 +242,10 @@ function updateDimensions() {
   $("squareCount").textContent = count.toLocaleString();
   $("cellCountLabel").textContent = circle ? "dots" : hex ? "hexagons" : "squares";
   const valid = validDimensions();
+  const dotRadius = circle ? MosaicRasterizer.cellCircle(layout, 0).rx : 0;
   $("canvasSize").textContent = valid ? `${width} × ${height} cm` : "Set print dimensions";
   $("physicalSize").textContent = valid ? `${width} × ${height}` : "—";
-  $("cellSize").textContent = valid ? circle ? `Dots are ${(width * 8 / layout.columns).toFixed(2)} × ${(height * 8 / layout.rows).toFixed(2)} mm. ${grid} rings plus one center dot.` : hex ? `Hexagons are approximately ${(width * 10 / (layout.columns + .5)).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75 + 1)).toFixed(2)} mm. Only full tiles are shown.` : `Each tile is ${(width * 10 / layout.columns).toFixed(2)} × ${(height * 10 / layout.rows).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
+  $("cellSize").textContent = valid ? circle ? `Dots are ${(width * 20 * dotRadius).toFixed(2)} × ${(height * 20 * dotRadius).toFixed(2)} mm. ${grid} rings plus one center dot.` : hex ? `Hexagons are approximately ${(width * 10 / (layout.columns + .5)).toFixed(2)} × ${(height * 10 / ((layout.rows - 1) * .75 + 1)).toFixed(2)} mm. Only full tiles are shown.` : `Each tile is ${(width * 10 / layout.columns).toFixed(2)} × ${(height * 10 / layout.rows).toFixed(2)} mm` : "Enter dimensions from 1 to 50 cm.";
   updateActionButtons();
   drawPreview();
 }

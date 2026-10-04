@@ -227,12 +227,21 @@
   // Normalized geometry is shared by sampling, preview, pointer picking and exports.
   // Fit complete hexagons inside the rectangle, leaving a scalloped transparent border.
   // Staggered rows reflect with edits.
+  function circleMetrics(grid) {
+    const rings = (grid.columns - 1) / 2;
+    // The outer ring has the widest spacing. Equal-size dots touch there and
+    // slightly overlap on inner rings; fit the full outside diameter inside.
+    const radius = rings * Math.sin(Math.PI / (6 * rings));
+    return { rings, radius, span: 2 * (rings + radius) };
+  }
+
   function cellCircle(grid, index) {
+    const { radius, span } = circleMetrics(grid);
     const ring = index === 0 ? 0 : Math.ceil((Math.sqrt(1 + 4 * index / 3) - 1) / 2);
     const start = ring ? 1 + 3 * (ring - 1) * ring : 0, slot = index - start;
     const angle = ring ? slot * Math.PI / (3 * ring) - Math.PI / 2 : 0;
-    return { x: .5 + ring * Math.cos(angle) / grid.columns, y: .5 + ring * Math.sin(angle) / grid.rows,
-      rx: .4 / grid.columns, ry: .4 / grid.rows, ring, slot };
+    return { x: .5 + ring * Math.cos(angle) / span, y: .5 + ring * Math.sin(angle) / span,
+      rx: radius / span, ry: radius / span, ring, slot };
   }
 
   function cellMirrorIndex(grid, index) {
@@ -243,14 +252,14 @@
 
   function cellNeighbors(grid, index) {
     if (grid.grid_shape === "circle") {
-      const point = cellCircle(grid, index), rings = (grid.columns - 1) / 2, neighbors = new Set();
+      const point = cellCircle(grid, index), { rings, span } = circleMetrics(grid), neighbors = new Set();
       for (let ring = Math.max(0, point.ring - 1); ring <= Math.min(rings, point.ring + 1); ring++) {
         const count = ring ? 6 * ring : 1, start = ring ? 1 + 3 * (ring - 1) * ring : 0;
         const nearest = point.ring ? Math.round(point.slot * count / (6 * point.ring)) : 0;
         const slots = point.ring ? [-1, 0, 1].map(offset => (nearest + offset + count) % count) : Array.from({ length: count }, (_, i) => i);
         for (const slot of slots) {
           const next = start + slot, other = cellCircle(grid, next);
-          if (next !== index && Math.hypot((other.x - point.x) * grid.columns, (other.y - point.y) * grid.rows) <= 1.25) neighbors.add(next);
+          if (next !== index && Math.hypot((other.x - point.x) * span, (other.y - point.y) * span) <= 1.25) neighbors.add(next);
         }
       }
       return [...neighbors];
@@ -305,13 +314,20 @@
   function cellAtPoint(grid, x, y) {
     if (x < 0 || y < 0 || x >= 1 || y >= 1) return null;
     if (grid.grid_shape === "circle") {
-      const dx = (x - .5) * grid.columns, dy = (y - .5) * grid.rows;
-      const ring = Math.round(Math.hypot(dx, dy)), rings = (grid.columns - 1) / 2;
-      if (ring > rings) return null;
+      const { rings, span } = circleMetrics(grid), dx = (x - .5) * span, dy = (y - .5) * span;
+      const nearRing = Math.round(Math.hypot(dx, dy));
       const angle = (Math.atan2(dy, dx) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
-      const slot = ring ? Math.round(angle * 3 * ring / Math.PI) % (6 * ring) : 0;
-      const index = ring ? 1 + 3 * (ring - 1) * ring + slot : 0, circle = cellCircle(grid, index);
-      return ((x - circle.x) / circle.rx) ** 2 + ((y - circle.y) / circle.ry) ** 2 <= 1 + 1e-12 ? index : null;
+      let picked = null;
+      for (let ring = Math.max(0, nearRing - 1); ring <= Math.min(rings, nearRing + 1); ring++) {
+        const count = ring ? 6 * ring : 1, start = ring ? 1 + 3 * (ring - 1) * ring : 0;
+        const nearest = ring ? Math.round(angle * 3 * ring / Math.PI) : 0;
+        for (const offset of [-1, 0, 1]) {
+          const index = start + (nearest + offset + count) % count, circle = cellCircle(grid, index);
+          if (((x - circle.x) / circle.rx) ** 2 + ((y - circle.y) / circle.ry) ** 2 <= 1 + 1e-12)
+            picked = Math.max(picked ?? -1, index);
+        }
+      }
+      return picked;
     }
     if (grid.grid_shape !== "hexagon") return Math.floor(y * grid.rows) * grid.columns + Math.floor(x * grid.columns);
     const nearRow = Math.round((y * ((grid.rows - 1) * .75 + 1) - .5) / .75);
@@ -379,7 +395,7 @@
   function circleSamples(data, width, bounds, side, originX, originY, settings, adjust) {
     const [left, top, right, bottom] = bounds, samples = [];
     // Integrate each circular dot separately. Vertical midpoint bands and exact
-    // horizontal overlap keep gaps and neighboring dots out of the average.
+    // horizontal overlap keep bounding-box corners out of the average.
     for (let index = 0; index < settings.cell_count; index++) {
       const circle = cellCircle(settings, index), cx = originX + circle.x * side, cy = originY + circle.y * side;
       const radius = circle.rx * side, bands = Math.max(8, Math.ceil(radius * 4));

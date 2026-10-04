@@ -17,23 +17,41 @@ test("circle defaults match eight rings, 217 dots and a 7.5 cm print", () => {
   assert.deepEqual(R.pngDimensions(result), [886, 886]);
 });
 
-test("all ring sizes keep complete, separated dots with unpaintable gaps", () => {
+test("all ring sizes keep complete, touching dots with unpaintable curved spaces", () => {
   for (const rings of [1, 2, 8, 16]) {
     const grid = { ...R.gridLayout(rings, "circle"), grid_shape: "circle" };
     assert.equal(grid.cell_count, 1 + 3 * rings * (rings + 1));
     const dots = Array.from({ length: grid.cell_count }, (_, i) => R.cellCircle(grid, i));
     dots.forEach((dot, i) => {
       assert.equal(R.cellAtPoint(grid, dot.x, dot.y), i);
-      assert.ok(dot.x - dot.rx >= 0 && dot.x + dot.rx <= 1 && dot.y - dot.ry >= 0 && dot.y + dot.ry <= 1);
+      assert.ok(dot.x - dot.rx >= -1e-12 && dot.x + dot.rx <= 1 + 1e-12 && dot.y - dot.ry >= -1e-12 && dot.y + dot.ry <= 1 + 1e-12);
       const reflected = R.cellCircle(grid, R.cellMirrorIndex(grid, i));
       assert.ok(Math.abs(reflected.x - (1 - dot.x)) < 1e-12 && Math.abs(reflected.y - dot.y) < 1e-12);
       for (const next of R.cellNeighbors(grid, i)) {
         assert.ok(R.cellNeighbors(grid, next).includes(i), `${rings}: ${i} ↔ ${next}`);
-        assert.ok(Math.hypot(dot.x - dots[next].x, dot.y - dots[next].y) > dot.rx + dots[next].rx);
       }
+      const next = dots[dot.ring ? 1 + 3 * (dot.ring - 1) * dot.ring + (dot.slot + 1) % (6 * dot.ring) : 1];
+      assert.ok(Math.hypot(dot.x - next.x, dot.y - next.y) <= dot.rx + next.rx + 1e-12, "adjacent dots touch or overlap");
+      assert.notEqual(R.cellAtPoint(grid, (dot.x + next.x) / 2, (dot.y + next.y) / 2), null, "no gap at the midpoint between adjacent dots");
     });
     assert.equal(R.cellAtPoint(grid, .001, .001), null);
-    assert.equal(R.cellAtPoint(grid, .5, .5 - .5 / grid.rows), null);
+    assert.notEqual(R.cellAtPoint(grid, .5, .5 - .5 / grid.rows), null);
+  }
+});
+
+test("picking enlarged circle edges and overlaps agrees with the rendering order", () => {
+  for (const rings of [1, 8, 16]) {
+    const grid = { ...R.gridLayout(rings, "circle"), grid_shape: "circle" };
+    const dots = Array.from({ length: grid.cell_count }, (_, i) => R.cellCircle(grid, i));
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 20; x++) {
+      const px = (x + .5) / 20, py = (y + .5) / 20;
+      let expected = null;
+      dots.forEach((dot, i) => {
+        if (((px - dot.x) / dot.rx) ** 2 + ((py - dot.y) / dot.ry) ** 2 <= 1 + 1e-12) expected = i;
+      });
+      assert.equal(R.cellAtPoint(grid, px, py), expected);
+    }
+    assert.notEqual(R.cellAtPoint(grid, .5, .001), null, "outer dot edge remains paintable");
   }
 });
 
