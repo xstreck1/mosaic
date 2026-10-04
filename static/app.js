@@ -106,7 +106,7 @@ function updatePaletteUsage() {
   const transparent = state.selectedColor === -1;
   $("brushSwatch").classList.toggle("transparency-swatch", transparent);
   $("brushSwatch").style.backgroundColor = transparent ? "transparent" : result.palette[state.selectedColor];
-  $("brushName").textContent = transparent ? "Transparent" : result.palette_names[state.selectedColor] || result.palette[state.selectedColor];
+  $("brushName").textContent = transparent ? "Clear" : result.palette_names[state.selectedColor] || result.palette[state.selectedColor];
   if (!transparent) {
     $("customColor").value = result.palette[state.selectedColor];
     $("customColorHex").value = result.palette[state.selectedColor].toUpperCase();

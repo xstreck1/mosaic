@@ -112,7 +112,7 @@ test("transparent swatch erases with bucket fill and eyedropper can pick the era
   assert.equal(app.state.result.used_colors, 0);
   app.element("pickerTool").emit("click"); app.clickTile(50, 50);
   assert.equal(app.state.selectedColor, -1);
-  assert.equal(app.element("brushName").textContent, "Transparent");
+  assert.equal(app.element("brushName").textContent, "Clear");
   app.element("undoButton").emit("click");
   assert.ok(app.state.result.alphas.every(alpha => alpha === 255));
   assert.equal(app.state.result.used_colors, 1);

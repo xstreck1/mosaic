@@ -9,7 +9,7 @@ function pixels(width, height, color) {
   return data;
 }
 
-test("transparent tiles preserve alpha without consuming palette slots or using hidden RGB", () => {
+test("transparent tiles are solid or clear without consuming palette slots or using hidden RGB", () => {
   const source = pixels(10, 10, x => x < 2 ? [0, 255, 0, 0] : [255, 0, 0, 128]);
   for (const shape of ["square", "hexagon"]) for (const palette of ["image", "vibrant", "rainbow"]) {
     const result = R.rasterizePixels(source, 10, 10, { grid: 5, shape, palette, colors: 2 });
@@ -18,7 +18,8 @@ test("transparent tiles preserve alpha without consuming palette slots or using 
     assert.deepEqual(result, other);
     assert.ok(result.palette.length <= 2);
     assert.ok(result.alphas.some(alpha => alpha === 0));
-    assert.ok(result.alphas.some(alpha => alpha === 128));
+    assert.ok(result.alphas.some(alpha => alpha === 255));
+    assert.ok(result.alphas.every(alpha => alpha === 0 || alpha === 255));
     assert.equal(result.counts.reduce((a, b) => a + b), result.alphas.filter(Boolean).length);
     if (palette === "image") assert.deepEqual(result.palette, ["#FF0000"]);
   }
@@ -33,11 +34,23 @@ test("fully transparent images produce empty exports and zero used colors", () =
   }
 });
 
+test("source alpha uses a half-coverage cutoff for solid or clear tiles in both shapes", () => {
+  for (const shape of ["square", "hexagon"]) for (const alpha of [0, 1, 64, 127, 128, 254, 255]) {
+    const result = R.rasterizePixels(pixels(17, 17, () => [255, 0, 0, alpha]), 17, 17,
+      { grid: 5, shape, palette: "image" });
+    assert.ok(result.alphas.every(value => value === (alpha >= 128 ? 255 : 0)), `${shape}: ${alpha}`);
+    assert.equal(result.used_colors, alpha >= 128 ? 1 : 0);
+    if (alpha >= 128) assert.deepEqual(result.palette, ["#FF0000"]);
+    assert.throws(() => new MosaicEditor(result.cells, result.palette.length, 200,
+      new Array(result.cells.length).fill(128)), /solid or clear/);
+  }
+});
+
 test("alpha coverage includes fractional squares, contain padding, crop and mirroring", () => {
   const data = pixels(10, 10, x => x % 2 ? [255, 0, 0, 255] : [0, 0, 255, 0]);
   const result = R.rasterizePixels(data, 10, 10, { grid: 5, palette: "image" });
   assert.deepEqual(result.palette, ["#FF0000"]);
-  assert.ok(result.alphas.every(alpha => alpha === 128));
+  assert.ok(result.alphas.every(alpha => alpha === 255));
   const padded = R.rasterizePixels(pixels(15, 5, () => [100, 200, 40, 255]), 15, 5,
     { grid: 5, fit: "contain", palette: "image" });
   assert.equal(padded.alphas[0], 0); assert.equal(padded.alphas[12], 255);
@@ -48,31 +61,31 @@ test("alpha coverage includes fractional squares, contain padding, crop and mirr
   for (let row = 0; row < 5; row++) assert.deepEqual(mirrored.alphas.slice(row * 5, row * 5 + 5), original.alphas.slice(row * 5, row * 5 + 5).reverse());
 });
 
-test("erasing, painting and filling restore exact opacity through undo, redo and mirror", () => {
-  const cells = [0, 1, 2, 0, 0, 0], alphas = [0, 0, 128, 255, 0, 255];
+test("erasing, painting and filling restore solid and clear tiles through undo, redo and mirror", () => {
+  const cells = [0, 1, 2, 0, 0, 0], alphas = [0, 0, 255, 255, 0, 255];
   const editor = new MosaicEditor(cells, 3, 200, alphas), grid = { columns: 3, rows: 2 };
   editor.fill(0, 2, grid);
-  assert.deepEqual(alphas, [255, 255, 128, 255, 255, 255]);
+  assert.deepEqual(alphas, [255, 255, 255, 255, 255, 255]);
   assert.deepEqual(cells, [2, 2, 2, 0, 2, 0]);
-  editor.undo(); assert.deepEqual(alphas, [0, 0, 128, 255, 0, 255]);
+  editor.undo(); assert.deepEqual(alphas, [0, 0, 255, 255, 0, 255]);
   editor.beginStroke(-1); editor.paint(2); editor.endStroke();
   assert.equal(alphas[2], 0);
   editor.mirrorHorizontal(3);
-  editor.undo(); assert.deepEqual(alphas, [128, 0, 0, 255, 0, 255]);
+  editor.undo(); assert.deepEqual(alphas, [255, 0, 0, 255, 0, 255]);
   editor.redo(); assert.equal(alphas[0], 0);
   editor.beginStroke(1); editor.paint(0); editor.endStroke();
   assert.equal(alphas[0], 255);
   editor.undo(); assert.equal(alphas[0], 0);
 });
 
-test("SVG and PNG skip transparent tiles, preserve partial alpha and hide their grid lines", () => {
+test("SVG and PNG skip transparent tiles, paint opaque colors and hide their grid lines", () => {
   for (const grid_shape of ["square", "hexagon"]) {
     const cells = new Array(25).fill(0), alphas = new Array(25).fill(0);
-    alphas[6] = 128; alphas[7] = 255;
+    alphas[6] = 255; alphas[7] = 255;
     const payload = { columns: 5, rows: 5, grid_shape, cells, alphas, palette: ["#FF0000"], show_grid: true };
     const svg = R.exportSVG(payload);
     assert.equal((svg.match(/<(rect|polygon) /g) || []).length, 4);
-    assert.match(svg, /opacity="0\.5019607843137255"/);
+    assert.doesNotMatch(svg, /opacity=/);
     const fills = [], lines = [];
     let clears = 0;
     const ctx = { globalAlpha: 1, clearRect() { clears++; }, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
@@ -80,10 +93,10 @@ test("SVG and PNG skip transparent tiles, preserve partial alpha and hide their 
       stroke() { lines.push(this.globalAlpha); }, strokeRect() { lines.push(this.globalAlpha); } };
     R.paintExport({ getContext: () => ctx }, payload);
     assert.equal(clears, 1);
-    assert.deepEqual(fills, [128 / 255, 1]);
+    assert.deepEqual(fills, [1, 1]);
     assert.ok(lines.every(alpha => alpha > 0));
     assert.equal(ctx.globalAlpha, 1);
-    for (const invalid of [null, [0], new Array(25).fill(-1), new Array(25).fill(256), new Array(25).fill(true)])
+    for (const invalid of [null, [0], new Array(25).fill(-1), new Array(25).fill(128), new Array(25).fill(256), new Array(25).fill(true)])
       assert.throws(() => R.exportSVG({ ...payload, alphas: invalid }), /opacity/);
   }
 });

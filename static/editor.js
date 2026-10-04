@@ -5,6 +5,8 @@ class MosaicEditor {
   constructor(cells, paletteSize, historyLimit = 200, alphas = null) {
     this.cells = cells;
     this.alphas = alphas ?? new Array(cells.length).fill(255);
+    if (!Array.isArray(this.alphas) || this.alphas.length !== cells.length || this.alphas.some(alpha => alpha !== 0 && alpha !== 255))
+      throw new RangeError("Tile opacity must be solid or clear.");
     this.paletteSize = paletteSize;
     this.historyLimit = historyLimit;
     this.undoStack = [];

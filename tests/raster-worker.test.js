@@ -49,7 +49,7 @@ test("Original and Mosaic preserve source alpha and refresh when white flattenin
   await w.send({ grid: 5, previewOnly: true });
   assert.equal(w.calls.flatten, 0);
   await w.send({ grid: 5 });
-  assert.ok(w.messages[1].result.alphas.every(alpha => alpha === 128));
+  assert.ok(w.messages[1].result.alphas.every(alpha => alpha === 255));
   await w.send({ grid: 5, previewOnly: true, transparency: false });
   assert.equal(w.calls.flatten, 1);
   await w.send({ grid: 5, transparency: false });

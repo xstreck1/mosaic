@@ -320,7 +320,8 @@
 
   function sampleColor(red, green, blue, opacity, area, transparency) {
     if (!transparency) return [red, green, blue].map(v => clamp(v / area + 255 * (1 - opacity / area))).concat(255);
-    return opacity ? [red, green, blue].map(v => clamp(v / opacity)).concat(clamp(255 * opacity / area)) : [255, 255, 255, 0];
+    // Tiles are solid or clear: majority foreground coverage keeps a full tile.
+    return opacity ? [red, green, blue].map(v => clamp(v / opacity)).concat(opacity / area >= .5 - 1e-12 ? 255 : 0) : [255, 255, 255, 0];
   }
 
   function cropBounds(width, height, crop) {
@@ -421,7 +422,7 @@
     if (!Array.isArray(payload.palette) || payload.palette.length < 1 || payload.palette.length > 64 || payload.palette.some(c => typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c))) throw new Error("Choose a valid palette with 1 to 64 colors.");
     if (!Array.isArray(payload.cells) || payload.cells.length !== columns * rows || payload.cells.some(i => !Number.isInteger(i) || i < 0 || i >= payload.palette.length)) throw new Error("Invalid mosaic cells.");
     if (payload.alphas !== undefined && (!Array.isArray(payload.alphas) || payload.alphas.length !== payload.cells.length ||
-      payload.alphas.some(alpha => !Number.isInteger(alpha) || alpha < 0 || alpha > 255))) throw new Error("Invalid tile opacity.");
+      payload.alphas.some(alpha => alpha !== 0 && alpha !== 255))) throw new Error("Tile opacity must be solid or clear.");
     if (payload.show_grid !== undefined && typeof payload.show_grid !== "boolean") throw new Error("Invalid grid option.");
     return { ...payload, columns, rows, grid_shape, mirror, width_cm, height_cm, show_grid: payload.show_grid ?? false };
   }
@@ -429,18 +430,17 @@
   function exportSVG(payload) {
     const p = validateExport(payload), { columns, rows, width_cm, height_cm, cells, palette } = p;
     const alphaAt = i => p.alphas?.[i] ?? 255;
-    const opacity = i => alphaAt(i) < 255 ? ` opacity="${alphaAt(i) / 255}"` : "";
     if (p.grid_shape === "hexagon") {
-      const polygons = cells.map((cell, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"${opacity(i)}/>` : "").join("");
-      const lines = p.show_grid ? cells.map((_, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"${opacity(i)}/>` : "").join("") : "";
+      const polygons = cells.map((cell, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}" fill="${palette[cell]}" stroke="${palette[cell]}" stroke-width="${.0125 / columns}" stroke-linejoin="round"/>` : "").join("");
+      const lines = p.show_grid ? cells.map((_, i) => alphaAt(i) ? `<polygon points="${cellPolygon(p, i).map(point => point.map(v => +v.toFixed(9)).join(",")).join(" ")}"/>` : "").join("") : "";
       return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 1 1" preserveAspectRatio="none" overflow="hidden"><title>Mosaic — ${cells.length} hexagons, ${width_cm} × ${height_cm} cm</title>${polygons}${lines ? `<g fill="none" stroke="${darkest(palette)}" stroke-width="${.025 / columns}">${lines}</g>` : ""}</svg>`;
     }
     let svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width_cm}cm" height="${height_cm}cm" viewBox="0 0 ${columns} ${rows}" preserveAspectRatio="none" shape-rendering="crispEdges">`;
     svg += `<title>Mosaic — ${columns} × ${rows} squares, ${width_cm} × ${height_cm} cm</title>`;
-    cells.forEach((cell, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="${palette[cell]}"${opacity(i)}/>`; });
+    cells.forEach((cell, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="${palette[cell]}"/>`; });
     if (p.show_grid) {
-      if (p.alphas?.some(alpha => alpha < 255)) {
-        cells.forEach((_, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="none" stroke="${darkest(palette)}" stroke-width="0.025"${opacity(i)}/>`; });
+      if (p.alphas?.some(alpha => alpha === 0)) {
+        cells.forEach((_, i) => { if (alphaAt(i)) svg += `<rect x="${i % columns}" y="${Math.floor(i / columns)}" width="1" height="1" fill="none" stroke="${darkest(palette)}" stroke-width="0.025"/>`; });
         return svg + "</svg>";
       }
       const commands = [];
@@ -465,8 +465,8 @@
   function paintMosaic(canvas, p) {
     const width = canvas.width, height = canvas.height;
     const ctx = canvas.getContext("2d");
-    const alphaAt = i => p.alphas?.[i] ?? 255, translucent = p.alphas?.some(alpha => alpha < 255);
-    if (translucent || p.grid_shape === "hexagon") ctx.clearRect(0, 0, width, height);
+    const alphaAt = i => p.alphas?.[i] ?? 255, hasClearTiles = p.alphas?.some(alpha => alpha === 0);
+    if (hasClearTiles || p.grid_shape === "hexagon") ctx.clearRect(0, 0, width, height);
     if (p.grid_shape === "hexagon") {
       const path = points => {
         ctx.beginPath();
@@ -477,21 +477,21 @@
       ctx.lineWidth = .7; ctx.lineJoin = "round";
       p.cells.forEach((cell, i) => {
         if (!alphaAt(i)) return;
-        ctx.globalAlpha = alphaAt(i) / 255;
+        ctx.globalAlpha = 1;
         path(cellPolygon(p, i)); ctx.fillStyle = p.palette[cell]; ctx.strokeStyle = p.palette[cell]; ctx.fill();
-        if (alphaAt(i) === 255) ctx.stroke();
+        ctx.stroke();
       });
       if (p.show_grid) {
         ctx.strokeStyle = darkest(p.palette);
         ctx.lineWidth = Math.max(.5, Math.min(width / (p.columns + .5), height / ((p.rows - 1) * .75 + 1)) * .025);
-        p.cells.forEach((_, i) => { if (alphaAt(i)) { ctx.globalAlpha = alphaAt(i) / 255; path(cellPolygon(p, i)); ctx.stroke(); } });
+        p.cells.forEach((_, i) => { if (alphaAt(i)) { ctx.globalAlpha = 1; path(cellPolygon(p, i)); ctx.stroke(); } });
       }
       ctx.globalAlpha = 1;
       return canvas;
     }
     p.cells.forEach((cell, i) => {
       if (!alphaAt(i)) return;
-      ctx.globalAlpha = alphaAt(i) / 255;
+      ctx.globalAlpha = 1;
       const x = i % p.columns, y = Math.floor(i / p.columns), left = Math.round(x * width / p.columns), top = Math.round(y * height / p.rows);
       ctx.fillStyle = p.palette[cell];
       ctx.fillRect(left, top, Math.round((x + 1) * width / p.columns) - left, Math.round((y + 1) * height / p.rows) - top);
@@ -500,11 +500,11 @@
     if (p.show_grid) {
       ctx.fillStyle = darkest(p.palette);
       const stroke = Math.max(1, Math.round(Math.min(width / p.columns, height / p.rows) * .025));
-      if (translucent) {
+      if (hasClearTiles) {
         ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = stroke;
         p.cells.forEach((_, i) => {
           if (!alphaAt(i)) return;
-          ctx.globalAlpha = alphaAt(i) / 255;
+          ctx.globalAlpha = 1;
           const x = i % p.columns, y = Math.floor(i / p.columns), left = Math.round(x * width / p.columns), top = Math.round(y * height / p.rows);
           ctx.strokeRect(left + stroke / 2, top + stroke / 2, Math.max(0, Math.round((x + 1) * width / p.columns) - left - stroke), Math.max(0, Math.round((y + 1) * height / p.rows) - top - stroke));
         });
