@@ -182,7 +182,7 @@
     if (width * height > 25000000) throw new Error("The image must be no larger than 25 megapixels.");
     const grid_shape = options.shape ?? "square", transparency = options.transparency ?? true;
     if (!["square", "hexagon", "circle"].includes(grid_shape)) throw new Error("Choose a valid grid shape.");
-    const size = number(options.grid ?? (grid_shape === "circle" ? 8 : 21), "Grid size", grid_shape === "circle" ? 1 : 5, grid_shape === "circle" ? 16 : 64, true);
+    const size = number(options.grid ?? (grid_shape === "circle" ? 8 : 21), "Grid size", grid_shape === "circle" ? 1 : 5, grid_shape === "circle" ? 32 : 64, true);
     const mode = options.palette === "studio" ? "vibrant" : options.palette ?? "vibrant", fit = options.fit ?? "cover", mirror = options.mirror ?? false;
     if (typeof mirror !== "boolean") throw new Error("Choose a valid mirror setting.");
     if (typeof transparency !== "boolean") throw new Error("Choose a valid transparency setting.");
@@ -197,7 +197,7 @@
 
   function gridLayout(size, shape = "square", rowCount = null) {
     if (shape === "circle") {
-      const rings = number(size, "Circle rings", 1, 16, true);
+      const rings = number(size, "Circle rings", 1, 32, true);
       if (rowCount != null) throw new Error("Circle rings use linked dimensions.");
       return { columns: 2 * rings + 1, rows: 2 * rings + 1, cell_count: 1 + 3 * rings * (rings + 1) };
     }
@@ -209,8 +209,8 @@
   function linkedPrintDimensions(grid, width, height, anchor = "width") {
     const shape = grid.grid_shape;
     if (!["square", "hexagon", "circle"].includes(shape)) throw new Error("Choose a valid grid shape.");
-    const columns = number(grid.columns, "Grid columns", shape === "circle" ? 3 : 5, 64, true);
-    const rows = number(grid.rows, "Grid rows", shape === "circle" ? 3 : 5, shape === "hexagon" ? 74 : 64, true);
+    const columns = number(grid.columns, "Grid columns", shape === "circle" ? 3 : 5, shape === "circle" ? 65 : 64, true);
+    const rows = number(grid.rows, "Grid rows", shape === "circle" ? 3 : 5, shape === "circle" ? 65 : shape === "hexagon" ? 74 : 64, true);
     width = number(width, "Print width", 1, 50);
     height = number(height, "Print height", 1, 50);
     if (!["width", "height"].includes(anchor)) throw new Error("Choose a valid print dimension anchor.");
@@ -514,8 +514,8 @@
     const grid_shape = payload.grid_shape ?? "square", mirror = payload.mirror ?? false;
     if (!["square", "hexagon", "circle"].includes(grid_shape) || typeof mirror !== "boolean") throw new Error("Invalid grid shape or mirror setting.");
     const circle = grid_shape === "circle";
-    const columns = number(payload.columns, "Columns", circle ? 3 : 5, circle ? 33 : grid_shape === "hexagon" ? 65 : 64, true);
-    const rows = number(payload.rows, "Rows", circle ? 3 : 5, circle ? 33 : grid_shape === "hexagon" ? 75 : 64, true);
+    const columns = number(payload.columns, "Columns", circle ? 3 : 5, circle ? 65 : grid_shape === "hexagon" ? 65 : 64, true);
+    const rows = number(payload.rows, "Rows", circle ? 3 : 5, circle ? 65 : grid_shape === "hexagon" ? 75 : 64, true);
     if (circle && (columns !== rows || columns % 2 !== 1)) throw new Error("Invalid circle ring layout.");
     const cell_count = circle ? 1 + 3 * (columns - 1) / 2 * ((columns - 1) / 2 + 1) : columns * rows;
     const defaultSize = circle ? 7.5 : grid_shape === "square" ? 10.8 : 11;

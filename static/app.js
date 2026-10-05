@@ -429,7 +429,7 @@ function syncLinkedPrintDimensions(anchor = "width") {
 function syncGridControls() {
   const circle = state.shape === "circle";
   $("gridSize").min = circle ? 1 : 5;
-  $("gridSize").max = circle ? 16 : 64;
+  $("gridSize").max = circle ? 32 : 64;
   $("lockGridSize").disabled = circle;
   $("lockGridSize").setAttribute("aria-pressed", String(state.gridLinked));
   $("lockGridSize").textContent = state.gridLinked ? "↔ Linked" : "↔ Unlinked";

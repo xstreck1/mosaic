@@ -18,7 +18,7 @@ test("circle defaults match eight rings, 217 dots and a 7.5 cm print", () => {
 });
 
 test("all ring sizes keep complete, touching dots with unpaintable curved spaces", () => {
-  for (const rings of [1, 2, 8, 16]) {
+  for (const rings of [1, 2, 8, 16, 32]) {
     const grid = { ...R.gridLayout(rings, "circle"), grid_shape: "circle" };
     assert.equal(grid.cell_count, 1 + 3 * rings * (rings + 1));
     const dots = Array.from({ length: grid.cell_count }, (_, i) => R.cellCircle(grid, i));
@@ -40,7 +40,7 @@ test("all ring sizes keep complete, touching dots with unpaintable curved spaces
 });
 
 test("picking enlarged circle edges and overlaps agrees with the rendering order", () => {
-  for (const rings of [1, 8, 16]) {
+  for (const rings of [1, 8, 16, 32]) {
     const grid = { ...R.gridLayout(rings, "circle"), grid_shape: "circle" };
     const dots = Array.from({ length: grid.cell_count }, (_, i) => R.cellCircle(grid, i));
     for (let y = 0; y < 20; y++) for (let x = 0; x < 20; x++) {
@@ -99,7 +99,7 @@ test("circle exports leave gaps clear or white according to the transparency set
     assert.deepEqual(fills, transparency ? [] : ["#FFFFFF"]);
     assert.ok(dots.every(dot => Math.abs(dot[2] - dot[3]) < 1e-9));
   }
-  for (const options of [{ grid: 0 }, { grid: 17 }, { grid: 1.5 }, { gridRows: 17 }])
+  for (const options of [{ grid: 0 }, { grid: 33 }, { grid: 1.5 }, { gridRows: 17 }])
     assert.throws(() => R.imageSettings(90, 90, { shape: "circle", ...options }));
   assert.throws(() => R.exportSVG({ ...base, rows: 15 }));
   assert.throws(() => R.exportSVG({ ...base, cells: new Array(289).fill(0) }));
